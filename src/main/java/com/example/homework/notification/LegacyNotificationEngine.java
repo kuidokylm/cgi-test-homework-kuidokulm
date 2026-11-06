@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class LegacyNotificationEngine implements InitializingBean {
 
+  private static final Logger logger = LoggerFactory.getLogger(LegacyNotificationEngine.class);
   private static final Map<String, INotificationHandler> REGISTRY = new HashMap<String, INotificationHandler>();
 
   private final LegacyDatabaseManager dbManager;
@@ -38,7 +41,7 @@ public class LegacyNotificationEngine implements InitializingBean {
     String safeTarget = target != null ? target.trim() : null;
     String safePayload = payload != null ? payload : "";
 
-    if (safeTarget == null || safeTarget.length() == 0) {
+    if (safeTarget == null || safeTarget.isEmpty()) {
       throw new IllegalArgumentException("Target is mandatory.");
     }
 
@@ -55,7 +58,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     INotificationHandler handler = REGISTRY.get(safeType);
     if (handler == null) {
-      System.out.println("LOGGING TO DB: Unknown type attempted -> " + type);
+      logger.warn("Unsupported notification type requested: {}", safeType);
       dbManager.recordUnsupportedType(id, safeType);
       throw new Exception("Unsupported type: " + type);
     }
@@ -181,7 +184,7 @@ public class LegacyNotificationEngine implements InitializingBean {
           shorten(error),
           new Timestamp(System.currentTimeMillis()),
           Long.valueOf(id));
-      System.out.println("[DB AUDIT] Inserted failure record for " + target + ": " + error);
+      logger.warn("Recorded failure for notification dispatch {}: {}", id, error);
     }
 
     public void resetDatabaseFailures() {
@@ -288,21 +291,21 @@ public class LegacyNotificationEngine implements InitializingBean {
       if (target != null && target.contains("error")) {
         throw new RuntimeException("SMTP Timeout");
       }
-      System.out.println("[EMAIL] " + target + " -> " + payload);
+      logger.info("EMAIL notification dispatched");
     }
   }
 
   private static class SmsHandler implements INotificationHandler {
     @Override
     public void execute(String target, String payload) {
-      System.out.println("[SMS] " + target + " -> " + payload);
+      logger.info("SMS notification dispatched");
     }
   }
 
   private static class PushHandler implements INotificationHandler {
     @Override
     public void execute(String target, String payload) {
-      System.out.println("[PUSH] " + target + " -> " + payload);
+      logger.info("PUSH notification dispatched");
     }
   }
 }
