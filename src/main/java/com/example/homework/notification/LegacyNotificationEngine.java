@@ -91,17 +91,17 @@ public class LegacyNotificationEngine implements InitializingBean {
       public LegacyNotificationResponse mapRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         LegacyNotificationResponse response = new LegacyNotificationResponse();
         response.setId(rs.getLong("id"));
-        response.setType(rs.getString("tp"));
-        response.setTarget(rs.getString("tgt"));
-        response.setPayload(rs.getString("pld"));
-        response.setStatus(rs.getString("st"));
-        response.setFailureCount(rs.getInt("fc"));
-        response.setDispatchCount(rs.getInt("dc"));
-        response.setBlocked("Y".equals(rs.getString("bl")) ? "Y" : "N");
-        response.setMessage(rs.getString("lm"));
+        response.setType(rs.getString("notificationType"));
+        response.setTarget(rs.getString("targetDestination"));
+        response.setPayload(rs.getString("payload"));
+        response.setStatus(rs.getString("notificationState"));
+        response.setFailureCount(rs.getInt("failureCounter"));
+        response.setDispatchCount(rs.getInt("dispatchCounter"));
+        response.setBlocked("Y".equals(rs.getString("isBlacklisted")) ? "Y" : "N");
+        response.setMessage(rs.getString("lastMessage"));
 
-        response.setCreatedAt(rs.getTimestamp("crt"));
-        response.setUpdatedAt(rs.getTimestamp("upd"));
+        response.setCreatedAt(rs.getTimestamp("created"));
+        response.setUpdatedAt(rs.getTimestamp("updated"));
         return response;
       }
     };
@@ -118,8 +118,8 @@ public class LegacyNotificationEngine implements InitializingBean {
       Integer recentCount = jdbcTemplate.queryForObject(
           "select count(*) "
               + "from ntf_tx "
-              + "where tgt = ? "
-              + "  and crt >= dateadd('minute', -1, current_timestamp)",
+              + "where targetDestination = ? "
+              + "  and created >= dateadd('minute', -1, current_timestamp)",
           Integer.class,
           target);
 
@@ -134,7 +134,8 @@ public class LegacyNotificationEngine implements InitializingBean {
       final Timestamp now = new Timestamp(System.currentTimeMillis());
 
       jdbcTemplate.update(
-          "insert into ntf_tx(id, tp, tgt, pld, st, fc, dc, bl, lm, crt, upd) "
+          "insert into ntf_tx(id, notificationType, targetDestination, payload, notificationState, "
+              + "failureCounter, dispatchCounter, isBlacklisted, lastMessage, created, updated) "
               + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           id,
           type,
@@ -160,7 +161,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public int getFailureCountFromDatabase() {
       List<Integer> results = jdbcTemplate.query(
-          "select fc from ntf_tx order by id desc limit 1",
+          "select failureCounter from ntf_tx order by id desc limit 1",
           new RowMapper<>() {
             @Override
             @NullMarked
@@ -181,7 +182,8 @@ public class LegacyNotificationEngine implements InitializingBean {
     public void recordDatabaseFailure(long id, String target, String error) {
       int nextFailureCount = getFailureCountFromDatabase() + 1;
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ?, tgt = ? where id = ?",
+          "update ntf_tx set notificationState = ?, failureCounter = ?, lastMessage = ?, "
+              + "updated = ?, targetDestination = ? where id = ?",
           "E",
           nextFailureCount,
           shorten(error),
@@ -200,7 +202,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public void resetDatabaseFailures(long id) {
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ? where id = ?",
+          "update ntf_tx set notificationState = ?, failureCounter = ?, lastMessage = ?, updated = ? where id = ?",
           "S",
           0,
           "SENT",
@@ -210,7 +212,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public void recordUnsupportedType(long id, String type) {
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, lm = ?, upd = ? where id = ?",
+          "update ntf_tx set notificationState = ?, lastMessage = ?, updated = ? where id = ?",
           "U",
           shorten("Unsupported type: " + type),
           new Timestamp(System.currentTimeMillis()),
@@ -219,7 +221,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public void markAsSkipped(long id, String message) {
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, lm = ?, upd = ? where id = ?",
+          "update ntf_tx set notificationState = ?, lastMessage = ?, updated = ? where id = ?",
           "R",
           shorten(message),
           new Timestamp(System.currentTimeMillis()),
@@ -228,7 +230,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public int getTotalDispatches() {
       Integer latestDispatchCount = jdbcTemplate.queryForObject(
-          "select coalesce(max(dc), 0) from ntf_tx",
+          "select coalesce(max(dispatchCounter), 0) from ntf_tx",
           Integer.class);
       if (latestDispatchCount == null) {
         return 0;
