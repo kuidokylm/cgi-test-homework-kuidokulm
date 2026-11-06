@@ -57,7 +57,12 @@ public class LegacyNotificationEngine implements InitializingBean {
     String safeType = type != null ? type.trim().toUpperCase() : "";
     String safePayload = payload != null ? payload : "";
 
-    long id = dbManager.openDispatch(safeType, safeTarget, safePayload);
+    long id;
+    try {
+      id = dbManager.openDispatch(safeType, safeTarget, safePayload);
+    } catch (Exception e) {
+      throw new LegacyNotificationException.DispatchFailed(e);
+    }
 
     if (dbManager.getFailureCountFromDatabase() >= 3) {
       dbManager.markAsSkipped(id, "Circuit breaker OPEN via database state.");
@@ -93,7 +98,7 @@ public class LegacyNotificationEngine implements InitializingBean {
     dbManager.insertIntoBlacklist(target);
   }
 
-  public void removeFromblacklist(String target) {
+  public void removeFromBlacklist(String target) {
     dbManager.removeFromBlacklist(target);
   }
 }

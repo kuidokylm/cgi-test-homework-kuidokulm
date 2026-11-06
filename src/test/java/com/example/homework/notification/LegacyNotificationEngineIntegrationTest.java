@@ -53,11 +53,11 @@ public class LegacyNotificationEngineIntegrationTest {
     assertThat(exception).isInstanceOf(LegacyNotificationException.RecipientRejected.class);
     assertThat(engine.getHistory()).isEmpty();
 
-    engine.removeFromblacklist("buyer@example.com");
+    engine.removeFromBlacklist("buyer@example.com");
     LegacyNotificationResponse response =
         engine.processNotification("EMAIL", "buyer@example.com", "hello");
     assertThat(response.getStatus()).isEqualTo("S");
-    engine.removeFromblacklist("testbuyer@example.com");
+    engine.removeFromBlacklist("testbuyer@example.com");
   }
 
   @Test

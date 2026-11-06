@@ -212,21 +212,6 @@ public class LegacyDatabaseManager {
         rowMapper);
   }
 
-  private long findLatestId() {
-    List<Long> ids = jdbcTemplate.query(
-        "select id from ntf_tx order by id desc limit 1",
-        new RowMapper<>() {
-          @Override
-          @NullMarked
-          public Long mapRow(ResultSet resultSet, int rowNum) throws SQLException {
-            return resultSet.getLong(1);
-          }
-        });
-    if (ids.isEmpty()) {
-      return 0L;
-    }
-    return ids.getFirst();
-  }
 
   private String shorten(String value) {
     if (value == null) {
