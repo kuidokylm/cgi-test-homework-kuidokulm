@@ -4,6 +4,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.example.homework.notification.handler.EmailNotificationHandler;
+import com.example.homework.notification.handler.PushNotificationHandler;
+import com.example.homework.notification.handler.SmsNotificationHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -25,9 +28,9 @@ public class LegacyNotificationEngine implements InitializingBean {
   @Override
   public void afterPropertiesSet() {
     registry.clear();
-    registry.put("EMAIL", new EmailHandler());
-    registry.put("SMS", new SmsHandler());
-    registry.put("PUSH", new PushHandler());
+    registry.put("EMAIL", new EmailNotificationHandler());
+    registry.put("SMS", new SmsNotificationHandler());
+    registry.put("PUSH", new PushNotificationHandler());
   }
 
   void registerHandler(String type, INotificationHandler handler) {
@@ -89,30 +92,5 @@ public class LegacyNotificationEngine implements InitializingBean {
 
   public void removeFromblacklist(String target) {
     dbManager.removeFromBlacklist(target);
-  }
-
-  interface INotificationHandler {
-    void execute(String target, String payload) throws Exception;
-  }
-
-  private static class EmailHandler implements INotificationHandler {
-    @Override
-    public void execute(String target, String payload) {
-      logger.info("EMAIL notification dispatched");
-    }
-  }
-
-  private static class SmsHandler implements INotificationHandler {
-    @Override
-    public void execute(String target, String payload) {
-      logger.info("SMS notification dispatched");
-    }
-  }
-
-  private static class PushHandler implements INotificationHandler {
-    @Override
-    public void execute(String target, String payload) {
-      logger.info("PUSH notification dispatched");
-    }
   }
 }

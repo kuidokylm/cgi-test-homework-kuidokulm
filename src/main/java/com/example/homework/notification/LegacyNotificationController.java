@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.*;
 public class LegacyNotificationController {
 
   private final LegacyNotificationEngine engine;
-
   public LegacyNotificationController(LegacyNotificationEngine engine) {
     this.engine = engine;
   }

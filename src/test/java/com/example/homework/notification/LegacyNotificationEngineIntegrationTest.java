@@ -65,8 +65,7 @@ public class LegacyNotificationEngineIntegrationTest {
 
   @Test
   void threeFailuresOpenCircuitBreakerForNextAttempt() throws Exception {
-    LegacyNotificationEngine.INotificationHandler emailHandler =
-        mock(LegacyNotificationEngine.INotificationHandler.class);
+    INotificationHandler emailHandler = mock(INotificationHandler.class);
     doThrow(new Exception("SMTP Timeout"))
         .when(emailHandler)
         .execute(anyString(), anyString());
