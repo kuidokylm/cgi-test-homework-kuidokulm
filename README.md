@@ -76,3 +76,10 @@ These are not required for the core task, but they can earn additional credit if
 
 - adding a update endpoint for notifications
 - introducing a proper blacklist functionality to enforcement flow for blocked recipients
+
+## Running locally
+
+The application requires Java 25 and uses the Gradle wrapper.
+
+- Run the service with `gradlew.bat bootRun` on Windows or `./gradlew bootRun` on macOS/Linux.
+- Run the tests with `gradlew.bat test` on Windows or `./gradlew test` on macOS/Linux.
