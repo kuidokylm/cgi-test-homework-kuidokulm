@@ -47,13 +47,8 @@ public class LegacyNotificationEngine implements InitializingBean {
 
   public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload) {
     String safeTarget = target != null ? target.trim() : null;
-    if (safeTarget == null || safeTarget.isEmpty()) {
-      throw new LegacyNotificationException.InvalidTarget();
-    }
+    validateTarget(safeTarget);
 
-    if (dbManager.isUserBlacklistedOrRateLimited(safeTarget)) {
-      throw new LegacyNotificationException.RecipientRejected();
-    }
     String safeType = type != null ? type.trim().toUpperCase() : "";
     String safePayload = payload != null ? payload : "";
 
@@ -83,6 +78,16 @@ public class LegacyNotificationEngine implements InitializingBean {
     } catch (Exception e) {
       dbManager.recordDatabaseFailure(id, safeTarget, e.getMessage());
       throw new LegacyNotificationException.DispatchFailed(e);
+    }
+  }
+
+  private void validateTarget(String safeTarget) {
+    if (safeTarget == null || safeTarget.isEmpty()) {
+      throw new LegacyNotificationException.InvalidTarget();
+    }
+
+    if (dbManager.isUserBlacklistedOrRateLimited(safeTarget)) {
+      throw new LegacyNotificationException.RecipientRejected();
     }
   }
 
