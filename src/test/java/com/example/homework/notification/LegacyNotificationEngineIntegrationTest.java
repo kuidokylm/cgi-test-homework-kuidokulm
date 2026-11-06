@@ -2,13 +2,15 @@ package com.example.homework.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.DirtiesContext;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @SpringBootTest
@@ -62,13 +64,22 @@ public class LegacyNotificationEngineIntegrationTest {
   }
 
   @Test
-  void threeFailuresOpenCircuitBreakerForNextAttempt() {
+  void threeFailuresOpenCircuitBreakerForNextAttempt() throws Exception {
+    LegacyNotificationEngine.INotificationHandler emailHandler =
+        mock(LegacyNotificationEngine.INotificationHandler.class);
+    doThrow(new Exception("SMTP Timeout"))
+        .when(emailHandler)
+        .execute(anyString(), anyString());
+    engine.registerHandler("EMAIL", emailHandler);
+
     for (int i = 0; i < 3; i++) {
       Exception exception = assertThrows(
           Exception.class,
           () -> engine.processNotification("EMAIL", "error-user@example.com", "boom"));
       assertThat(exception.getMessage()).isEqualTo("SMTP Timeout");
     }
+
+    engine.unRegisterHandler("EMAIL");
 
     RuntimeException exception = assertThrows(
         RuntimeException.class,

@@ -19,8 +19,8 @@ import org.springframework.stereotype.Service;
 public class LegacyNotificationEngine implements InitializingBean {
 
   private static final Logger logger = LoggerFactory.getLogger(LegacyNotificationEngine.class);
-  private static final Map<String, INotificationHandler> REGISTRY = new HashMap<>();
 
+  private final Map<String, INotificationHandler> registry = new HashMap<>();
   private final LegacyDatabaseManager dbManager;
 
   public LegacyNotificationEngine(JdbcTemplate jdbcTemplate) {
@@ -29,10 +29,18 @@ public class LegacyNotificationEngine implements InitializingBean {
 
   @Override
   public void afterPropertiesSet() {
-    REGISTRY.clear();
-    REGISTRY.put("EMAIL", new EmailHandler());
-    REGISTRY.put("SMS", new SmsHandler());
-    REGISTRY.put("PUSH", new PushHandler());
+    registry.clear();
+    registry.put("EMAIL", new EmailHandler());
+    registry.put("SMS", new SmsHandler());
+    registry.put("PUSH", new PushHandler());
+  }
+
+  void registerHandler(String type, INotificationHandler handler) {
+    registry.put(type.trim().toUpperCase(), handler);
+  }
+
+  void unRegisterHandler(String type) {
+    registry.remove(type.trim().toUpperCase());
   }
 
   public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload)
@@ -55,7 +63,7 @@ public class LegacyNotificationEngine implements InitializingBean {
       throw new RuntimeException("Circuit breaker OPEN via database state.");
     }
 
-    INotificationHandler handler = REGISTRY.get(safeType);
+    INotificationHandler handler = registry.get(safeType);
     if (handler == null) {
       logger.warn("Unsupported notification type requested: {}", safeType);
       dbManager.recordUnsupportedType(id, safeType);
@@ -116,10 +124,6 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
 
     public boolean isUserBlacklistedOrRateLimited(String target) {
-      /*
-      if (target != null && target.toLowerCase().contains("blocked")) {
-        return true;
-      } */
 
       Boolean blacklisted = jdbcTemplate.queryForObject(
               "select exists (select 1 from ntf_blacklist where targetDestination = ?)",
@@ -315,18 +319,13 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
   }
 
-  private interface INotificationHandler {
+  interface INotificationHandler {
     void execute(String target, String payload) throws Exception;
   }
 
   private static class EmailHandler implements INotificationHandler {
     @Override
-    public void execute(String target, String payload) throws Exception {
-
-
-      if (target != null && target.contains("error")) {
-        throw new Exception("SMTP Timeout");
-      }
+    public void execute(String target, String payload) {
       logger.info("EMAIL notification dispatched");
     }
   }
