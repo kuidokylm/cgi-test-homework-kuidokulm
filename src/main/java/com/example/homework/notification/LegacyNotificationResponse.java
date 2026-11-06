@@ -1,5 +1,7 @@
 package com.example.homework.notification;
 
+import jakarta.annotation.Nullable;
+
 import java.sql.Timestamp;
 
 public class LegacyNotificationResponse {
@@ -14,6 +16,7 @@ public class LegacyNotificationResponse {
   private String blocked;
   private String message;
   private Timestamp createdAt;
+  @Nullable
   private Timestamp updatedAt;
 
   public long getId() {
@@ -96,11 +99,12 @@ public class LegacyNotificationResponse {
     this.createdAt = createdAt;
   }
 
+  @Nullable
   public Timestamp getUpdatedAt() {
     return updatedAt;
   }
 
-  public void setUpdatedAt(Timestamp updatedAt) {
+  public void setUpdatedAt(@Nullable Timestamp updatedAt) {
     this.updatedAt = updatedAt;
   }
 }

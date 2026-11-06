@@ -167,8 +167,8 @@ public class LegacyNotificationEngine implements InitializingBean {
 
       jdbcTemplate.update(
           "insert into ntf_tx(id, notificationType, targetDestination, payload, notificationState, "
-              + "failureCounter, dispatchCounter, lastMessage, created, updated) "
-              + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              + "failureCounter, dispatchCounter, lastMessage, created) "
+              + "values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           id,
           type,
           target,
@@ -177,7 +177,6 @@ public class LegacyNotificationEngine implements InitializingBean {
           currentFailureCount,
           nextDispatchCount,
           "START",
-          now,
           now);
 
       return id;

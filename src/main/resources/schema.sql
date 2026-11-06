@@ -10,7 +10,7 @@ create table ntf_tx (
     dispatchCounter integer not null default 0,
     lastMessage varchar(255),
     created timestamp not null,
-    updated timestamp not null
+    updated timestamp null
 );
 
 comment on table ntf_tx is 'Notification transaction log';
