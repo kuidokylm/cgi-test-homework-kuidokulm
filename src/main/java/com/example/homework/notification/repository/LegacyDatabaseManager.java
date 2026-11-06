@@ -4,6 +4,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.function.Supplier;
 
 import com.example.homework.notification.model.LegacyNotificationResponse;
 import org.jspecify.annotations.NullMarked;
@@ -42,22 +43,26 @@ public class LegacyDatabaseManager {
   };
 
   public boolean isUserBlacklistedOrRateLimited(String target) {
-    Boolean blacklisted = jdbcTemplate.queryForObject(
-        "select exists (select 1 from ntf_blacklist where targetDestination = ?)",
-        Boolean.class,
-        target);
+    Boolean blacklisted = executeQuery(
+        "isUserBlacklistedOrRateLimited",
+        () -> jdbcTemplate.queryForObject(
+            "select exists (select 1 from ntf_blacklist where targetDestination = ?)",
+            Boolean.class,
+            target));
 
     if (Boolean.TRUE.equals(blacklisted)) {
       return true;
     }
 
-    Integer recentCount = jdbcTemplate.queryForObject(
-        "select count(*) "
-            + "from ntf_tx "
-            + "where targetDestination = ? "
-            + "  and created >= dateadd('minute', -1, current_timestamp)",
-        Integer.class,
-        target);
+    Integer recentCount = executeQuery(
+        "isUserBlacklistedOrRateLimited",
+        () -> jdbcTemplate.queryForObject(
+            "select count(*) "
+                + "from ntf_tx "
+                + "where targetDestination = ? "
+                + "  and created >= dateadd('minute', -1, current_timestamp)",
+            Integer.class,
+            target));
 
     return recentCount != null && recentCount >= 3;
   }
@@ -103,22 +108,26 @@ public class LegacyDatabaseManager {
   }
 
   private long getNextId() {
-    Long maxId = jdbcTemplate.queryForObject(
-        "select coalesce(max(id), 0) from ntf_tx",
-        Long.class);
+    Long maxId = executeQuery(
+        "getNextId",
+        () -> jdbcTemplate.queryForObject(
+            "select coalesce(max(id), 0) from ntf_tx",
+            Long.class));
     return (maxId == null ? 0L : maxId) + 1L;
   }
 
   public int getFailureCountFromDatabase() {
-    List<Integer> results = jdbcTemplate.query(
-        "select failureCounter from ntf_tx order by id desc limit 1",
-        new RowMapper<>() {
-          @Override
-          @NullMarked
-          public Integer mapRow(ResultSet resultSet, int rowNum) throws SQLException {
-            return resultSet.getInt(1);
-          }
-        });
+    List<Integer> results = executeQuery(
+        "getFailureCountFromDatabase",
+        () -> jdbcTemplate.query(
+            "select failureCounter from ntf_tx order by id desc limit 1",
+            new RowMapper<>() {
+              @Override
+              @NullMarked
+              public Integer mapRow(ResultSet resultSet, int rowNum) throws SQLException {
+                return resultSet.getInt(1);
+              }
+            }));
     if (results.isEmpty()) {
       return 0;
     }
@@ -171,6 +180,16 @@ public class LegacyDatabaseManager {
         id);
   }
 
+  private <T> T executeQuery(String operation, Supplier<T> query) {
+    try {
+      return query.get();
+    } catch (DataAccessException e) {
+      throw new DataAccessResourceFailureException(
+          "Database error while attempting to " + operation + ".",
+          e);
+    }
+  }
+
   private int executeUpdate(String operation, String sql, Object... args) {
     try {
       return jdbcTemplate.update(sql, args);
@@ -182,9 +201,11 @@ public class LegacyDatabaseManager {
   }
 
   public int getTotalDispatches() {
-    Integer latestDispatchCount = jdbcTemplate.queryForObject(
-        "select coalesce(max(dispatchCounter), 0) from ntf_tx",
-        Integer.class);
+    Integer latestDispatchCount = executeQuery(
+        "getTotalDispatches",
+        () -> jdbcTemplate.queryForObject(
+            "select coalesce(max(dispatchCounter), 0) from ntf_tx",
+            Integer.class));
     if (latestDispatchCount == null) {
       return 0;
     }
@@ -192,9 +213,11 @@ public class LegacyDatabaseManager {
   }
 
   public LegacyNotificationResponse getLatestState() {
-    List<LegacyNotificationResponse> items = jdbcTemplate.query(
-        "select * from ntf_tx order by id desc limit 1",
-        rowMapper);
+    List<LegacyNotificationResponse> items = executeQuery(
+        "getLatestState",
+        () -> jdbcTemplate.query(
+            "select * from ntf_tx order by id desc limit 1",
+            rowMapper));
     if (items.isEmpty()) {
       return null;
     }
@@ -202,16 +225,20 @@ public class LegacyDatabaseManager {
   }
 
   public LegacyNotificationResponse getDispatchById(long id) {
-    return jdbcTemplate.queryForObject(
-        "select * from ntf_tx where id = ?",
-        rowMapper,
-        id);
+    return executeQuery(
+        "getDispatchById",
+        () -> jdbcTemplate.queryForObject(
+            "select * from ntf_tx where id = ?",
+            rowMapper,
+            id));
   }
 
   public List<LegacyNotificationResponse> getHistory() {
-    return jdbcTemplate.query(
-        "select * from ntf_tx order by id desc limit 20",
-        rowMapper);
+    return executeQuery(
+        "getHistory",
+        () -> jdbcTemplate.query(
+            "select * from ntf_tx order by id desc limit 20",
+            rowMapper));
   }
 
 
