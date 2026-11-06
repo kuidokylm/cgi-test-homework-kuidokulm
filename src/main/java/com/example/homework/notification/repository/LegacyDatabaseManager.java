@@ -73,14 +73,15 @@ public class LegacyDatabaseManager {
         "insert into ntf_blacklist(targetDestination, created) values (?, ?)",
         target,
         new Timestamp(System.currentTimeMillis()));
+    logger.info("Added {} to blacklist", target);
   }
 
   public void removeFromBlacklist(String target) {
-    int deletedRows = executeUpdate(
+    executeUpdate(
         "removeFromBlacklist",
         "delete from ntf_blacklist where targetDestination = ?",
         target);
-    logger.info("Removed {} blacklist entry/entries", deletedRows);
+    logger.info("Removed {} from blacklist", target);
   }
 
   public long openDispatch(final String type, final String target, final String payload) {
@@ -158,6 +159,7 @@ public class LegacyDatabaseManager {
         "SENT",
         new Timestamp(System.currentTimeMillis()),
         id);
+    logger.info("Database failures reset for notification dispatch {}", id);
   }
 
   public void recordUnsupportedType(long id, String type) {
@@ -190,9 +192,9 @@ public class LegacyDatabaseManager {
     }
   }
 
-  private int executeUpdate(String operation, String sql, Object... args) {
+  private void executeUpdate(String operation, String sql, Object... args) {
     try {
-      return jdbcTemplate.update(sql, args);
+      jdbcTemplate.update(sql, args);
     } catch (DataAccessException e) {
       throw new DataAccessResourceFailureException(
           "Database error while attempting to " + operation + ".",
