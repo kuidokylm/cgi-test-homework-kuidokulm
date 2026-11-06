@@ -19,6 +19,7 @@ public class LegacyNotificationEngineIntegrationTest {
   public void emailSuccessIsStoredAsSent() throws Exception {
     LegacyNotificationResponse response = engine.processNotification("EMAIL", "buyer@example.com", "hello");
 
+    assertThat(response.getId()).isNotNull();
     assertThat(response.getStatus()).isEqualTo("S");
     assertThat(response.getDispatchCount()).isEqualTo(1);
     assertThat(response.getFailureCount()).isZero();

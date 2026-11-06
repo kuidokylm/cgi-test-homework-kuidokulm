@@ -6,6 +6,7 @@ import java.sql.Timestamp;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.jspecify.annotations.NullMarked;
 import org.slf4j.Logger;
@@ -50,7 +51,7 @@ public class LegacyNotificationEngine implements InitializingBean {
       throw new RuntimeException("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
     }
 
-    long id = dbManager.openDispatch(safeType, safeTarget, safePayload);
+    UUID id = dbManager.openDispatch(safeType, safeTarget, safePayload);
 
     if (dbManager.getFailureCountFromDatabase() >= 3) {
       dbManager.markAsSkipped(id, "Circuit breaker OPEN via database state.");
@@ -90,18 +91,18 @@ public class LegacyNotificationEngine implements InitializingBean {
       @NullMarked
       public LegacyNotificationResponse mapRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         LegacyNotificationResponse response = new LegacyNotificationResponse();
-        response.setId(rs.getLong("id"));
-        response.setType(rs.getString("tp"));
-        response.setTarget(rs.getString("tgt"));
-        response.setPayload(rs.getString("pld"));
-        response.setStatus(rs.getString("st"));
-        response.setFailureCount(rs.getInt("fc"));
-        response.setDispatchCount(rs.getInt("dc"));
-        response.setBlocked("Y".equals(rs.getString("bl")) ? "Y" : "N");
-        response.setMessage(rs.getString("lm"));
+        response.setId(rs.getObject("id", UUID.class));
+        response.setType(rs.getString("notificationType"));
+        response.setTarget(rs.getString("targetDestination"));
+        response.setPayload(rs.getString("payload"));
+        response.setStatus(rs.getString("notificationState"));
+        response.setFailureCount(rs.getInt("failureCounter"));
+        response.setDispatchCount(rs.getInt("dispatchCounter"));
+        response.setBlocked("Y".equals(rs.getString("isBlacklisted")) ? "Y" : "N");
+        response.setMessage(rs.getString("lastMessage"));
 
-        response.setCreatedAt(rs.getTimestamp("crt"));
-        response.setUpdatedAt(rs.getTimestamp("upd"));
+        response.setCreatedAt(rs.getTimestamp("created"));
+        response.setUpdatedAt(rs.getTimestamp("updated"));
         return response;
       }
     };
@@ -118,23 +119,24 @@ public class LegacyNotificationEngine implements InitializingBean {
       Integer recentCount = jdbcTemplate.queryForObject(
           "select count(*) "
               + "from ntf_tx "
-              + "where tgt = ? "
-              + "  and crt >= dateadd('minute', -1, current_timestamp)",
+              + "where targetDestination = ? "
+              + "  and created >= dateadd('minute', -1, current_timestamp)",
           Integer.class,
           target);
 
       return recentCount != null && recentCount >= 3;
     }
 
-    public long openDispatch(final String type, final String target, final String payload) {
-      final long id = getNextId();
+    public UUID openDispatch(final String type, final String target, final String payload) {
+      final UUID id = UUID.randomUUID();
       final int nextDispatchCount = getTotalDispatches() + 1;
       final int currentFailureCount = getFailureCountFromDatabase();
       final String blocked = (target != null && target.toLowerCase().contains("blocked")) ? "Y" : "N";
       final Timestamp now = new Timestamp(System.currentTimeMillis());
 
       jdbcTemplate.update(
-          "insert into ntf_tx(id, tp, tgt, pld, st, fc, dc, bl, lm, crt, upd) "
+          "insert into ntf_tx(id, notificationType, targetDestination, payload, notificationState, "
+              + "failureCounter, dispatchCounter, isBlacklisted, lastMessage, created, updated) "
               + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           id,
           type,
@@ -151,16 +153,9 @@ public class LegacyNotificationEngine implements InitializingBean {
       return id;
     }
 
-    private long getNextId() {
-      Long maxId = jdbcTemplate.queryForObject(
-          "select coalesce(max(id), 0) from ntf_tx",
-          Long.class);
-      return (maxId == null ? 0L : maxId) + 1L;
-    }
-
     public int getFailureCountFromDatabase() {
       List<Integer> results = jdbcTemplate.query(
-          "select fc from ntf_tx order by id desc limit 1",
+          "select failureCounter from ntf_tx order by dispatchCounter desc, id desc limit 1",
           new RowMapper<>() {
             @Override
             @NullMarked
@@ -175,13 +170,17 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
 
     public void recordDatabaseFailure(String target, String error) {
-      recordDatabaseFailure(findLatestId(), target, error);
+      UUID id = findLatestId();
+      if (id != null) {
+        recordDatabaseFailure(id, target, error);
+      }
     }
 
-    public void recordDatabaseFailure(long id, String target, String error) {
+    public void recordDatabaseFailure(UUID id, String target, String error) {
       int nextFailureCount = getFailureCountFromDatabase() + 1;
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ?, tgt = ? where id = ?",
+          "update ntf_tx set notificationState = ?, failureCounter = ?, lastMessage = ?, "
+              + "updated = ?, targetDestination = ? where id = ?",
           "E",
           nextFailureCount,
           shorten(error),
@@ -192,15 +191,15 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
 
     public void resetDatabaseFailures() {
-      long id = findLatestId();
-      if (id > 0L) {
+      UUID id = findLatestId();
+      if (id != null) {
         resetDatabaseFailures(id);
       }
     }
 
-    public void resetDatabaseFailures(long id) {
+    public void resetDatabaseFailures(UUID id) {
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ? where id = ?",
+          "update ntf_tx set notificationState = ?, failureCounter = ?, lastMessage = ?, updated = ? where id = ?",
           "S",
           0,
           "SENT",
@@ -208,18 +207,18 @@ public class LegacyNotificationEngine implements InitializingBean {
           id);
     }
 
-    public void recordUnsupportedType(long id, String type) {
+    public void recordUnsupportedType(UUID id, String type) {
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, lm = ?, upd = ? where id = ?",
+          "update ntf_tx set notificationState = ?, lastMessage = ?, updated = ? where id = ?",
           "U",
           shorten("Unsupported type: " + type),
           new Timestamp(System.currentTimeMillis()),
           id);
     }
 
-    public void markAsSkipped(long id, String message) {
+    public void markAsSkipped(UUID id, String message) {
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, lm = ?, upd = ? where id = ?",
+          "update ntf_tx set notificationState = ?, lastMessage = ?, updated = ? where id = ?",
           "R",
           shorten(message),
           new Timestamp(System.currentTimeMillis()),
@@ -228,7 +227,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public int getTotalDispatches() {
       Integer latestDispatchCount = jdbcTemplate.queryForObject(
-          "select coalesce(max(dc), 0) from ntf_tx",
+          "select coalesce(max(dispatchCounter), 0) from ntf_tx",
           Integer.class);
       if (latestDispatchCount == null) {
         return 0;
@@ -238,7 +237,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public LegacyNotificationResponse getLatestState() {
       List<LegacyNotificationResponse> items = jdbcTemplate.query(
-          "select * from ntf_tx order by id desc limit 1",
+          "select * from ntf_tx order by dispatchCounter desc, id desc limit 1",
           rowMapper);
       if (items.isEmpty()) {
         return null;
@@ -246,7 +245,7 @@ public class LegacyNotificationEngine implements InitializingBean {
       return items.getFirst();
     }
 
-    public LegacyNotificationResponse getDispatchById(long id) {
+    public LegacyNotificationResponse getDispatchById(UUID id) {
       return jdbcTemplate.queryForObject(
           "select * from ntf_tx where id = ?",
           rowMapper,
@@ -255,22 +254,16 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public List<LegacyNotificationResponse> getHistory() {
       return jdbcTemplate.query(
-          "select * from ntf_tx order by id desc limit 20",
+          "select * from ntf_tx order by dispatchCounter desc, id desc limit 20",
           rowMapper);
     }
 
-    private long findLatestId() {
-      List<Long> ids = jdbcTemplate.query(
-          "select id from ntf_tx order by id desc limit 1",
-          new RowMapper<>() {
-            @Override
-            @NullMarked
-            public Long mapRow(ResultSet resultSet, int rowNum) throws SQLException {
-              return resultSet.getLong(1);
-            }
-          });
+    private UUID findLatestId() {
+      List<UUID> ids = jdbcTemplate.query(
+          "select id from ntf_tx order by dispatchCounter desc, id desc limit 1",
+          (resultSet, rowNum) -> resultSet.getObject(1, UUID.class));
       if (ids.isEmpty()) {
-        return 0L;
+        return null;
       }
       return ids.getFirst();
     }
@@ -294,7 +287,7 @@ public class LegacyNotificationEngine implements InitializingBean {
     @Override
     public void execute(String target, String payload) throws Exception {
       if (target != null && target.contains("error")) {
-        throw new Exception("SMTP Timeout");
+        throw new RuntimeException("SMTP Timeout");
       }
       logger.info("EMAIL notification dispatched");
     }
