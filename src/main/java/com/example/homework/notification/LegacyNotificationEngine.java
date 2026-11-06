@@ -41,15 +41,14 @@ public class LegacyNotificationEngine implements InitializingBean {
     registry.remove(type.trim().toUpperCase());
   }
 
-  public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload)
-      throws Exception {
+  public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload) {
     String safeTarget = target != null ? target.trim() : null;
     if (safeTarget == null || safeTarget.isEmpty()) {
-      throw new IllegalArgumentException("Target is mandatory.");
+      throw new LegacyNotificationException.InvalidTarget();
     }
 
     if (dbManager.isUserBlacklistedOrRateLimited(safeTarget)) {
-      throw new RuntimeException("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
+      throw new LegacyNotificationException.RecipientRejected();
     }
     String safeType = type != null ? type.trim().toUpperCase() : "";
     String safePayload = payload != null ? payload : "";
@@ -58,14 +57,14 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     if (dbManager.getFailureCountFromDatabase() >= 3) {
       dbManager.markAsSkipped(id, "Circuit breaker OPEN via database state.");
-      throw new RuntimeException("Circuit breaker OPEN via database state.");
+      throw new LegacyNotificationException.CircuitOpen();
     }
 
     INotificationHandler handler = registry.get(safeType);
     if (handler == null) {
       logger.warn("Unsupported notification type requested: {}", safeType);
       dbManager.recordUnsupportedType(id, safeType);
-      throw new Exception("Unsupported type: " + type);
+      throw new LegacyNotificationException.UnsupportedType(safeType);
     }
 
     try {
@@ -74,7 +73,7 @@ public class LegacyNotificationEngine implements InitializingBean {
       return dbManager.getDispatchById(id);
     } catch (Exception e) {
       dbManager.recordDatabaseFailure(id, safeTarget, e.getMessage());
-      throw e;
+      throw new LegacyNotificationException.DispatchFailed(e);
     }
   }
 
