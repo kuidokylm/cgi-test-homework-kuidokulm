@@ -1,11 +1,10 @@
 package com.example.homework.notification;
 
 import java.sql.Timestamp;
-import java.util.UUID;
 
 public class LegacyNotificationResponse {
 
-  private UUID id;
+  private long id;
   private String type;
   private String target;
   private String payload;
@@ -17,11 +16,11 @@ public class LegacyNotificationResponse {
   private Timestamp createdAt;
   private Timestamp updatedAt;
 
-  public UUID getId() {
+  public long getId() {
     return id;
   }
 
-  public void setId(UUID id) {
+  public void setId(long id) {
     this.id = id;
   }
 

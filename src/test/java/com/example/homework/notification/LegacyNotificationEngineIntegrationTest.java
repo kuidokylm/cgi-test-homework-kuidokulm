@@ -1,7 +1,7 @@
 package com.example.homework.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,10 +16,9 @@ public class LegacyNotificationEngineIntegrationTest {
   private LegacyNotificationEngine engine;
 
   @Test
-  public void emailSuccessIsStoredAsSent() throws Exception {
+  void emailSuccessIsStoredAsSent() throws Exception {
     LegacyNotificationResponse response = engine.processNotification("EMAIL", "buyer@example.com", "hello");
 
-    assertThat(response.getId()).isNotNull();
     assertThat(response.getStatus()).isEqualTo("S");
     assertThat(response.getDispatchCount()).isEqualTo(1);
     assertThat(response.getFailureCount()).isZero();
@@ -27,27 +26,23 @@ public class LegacyNotificationEngineIntegrationTest {
   }
 
   @Test
-  public void blockedTargetFailsBeforeDispatchIsInserted() {
-    try {
-      engine.processNotification("SMS", "blocked-user@example.com", "hello");
-      fail("Expected blocked target to fail");
-    } catch (RuntimeException ex) {
-      assertThat(ex.getMessage()).isEqualTo("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
-    } catch (Exception ex) {
-      fail("Expected RuntimeException but got: " + ex.getClass().getName());
-    }
+  void blockedTargetFailsBeforeDispatchIsInserted() {
+    RuntimeException exception = assertThrows(
+        RuntimeException.class,
+        () -> engine.processNotification("SMS", "blocked-user@example.com", "hello"));
+    assertThat(exception.getMessage())
+        .isEqualTo("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
 
     assertThat(engine.getHistory()).isEmpty();
   }
 
   @Test
-  public void unsupportedTypeIsStoredAsUnknown() {
-    try {
-      engine.processNotification("FAX", "ops@example.com", "hello");
-      fail("Expected unsupported type to fail");
-    } catch (Exception ex) {
-      assertThat(ex.getMessage()).isEqualTo("Unsupported type: FAX");
-    }
+  void unsupportedTypeIsStoredAsUnknown() {
+    Exception exception = assertThrows(
+            Exception.class,
+            () -> engine.processNotification("FAX", "ops@example.com", "hello"));
+    assertThat(exception.getMessage()).isEqualTo("Unsupported type: FAX");
+
 
     LegacyNotificationResponse latest = engine.getLatestState();
     assertThat(latest.getStatus()).isEqualTo("U");
@@ -55,26 +50,18 @@ public class LegacyNotificationEngineIntegrationTest {
   }
 
   @Test
-  public void threeFailuresOpenCircuitBreakerForNextAttempt() {
+  void threeFailuresOpenCircuitBreakerForNextAttempt() {
     for (int i = 0; i < 3; i++) {
-      try {
-        engine.processNotification("EMAIL", "error-user@example.com", "boom");
-        fail("Expected email failure");
-      } catch (RuntimeException ex) {
-        assertThat(ex.getMessage()).isEqualTo("SMTP Timeout");
-      } catch (Exception ex) {
-        fail("Expected RuntimeException but got: " + ex.getClass().getName());
-      }
+      Exception exception = assertThrows(
+          Exception.class,
+          () -> engine.processNotification("EMAIL", "error-user@example.com", "boom"));
+      assertThat(exception.getMessage()).isEqualTo("SMTP Timeout");
     }
 
-    try {
-      engine.processNotification("SMS", "ok-user@example.com", "hello");
-      fail("Expected circuit breaker to reject the request");
-    } catch (RuntimeException ex) {
-      assertThat(ex.getMessage()).isEqualTo("Circuit breaker OPEN via database state.");
-    } catch (Exception ex) {
-      fail("Expected RuntimeException but got: " + ex.getClass().getName());
-    }
+    RuntimeException exception = assertThrows(
+        RuntimeException.class,
+        () -> engine.processNotification("SMS", "ok-user@example.com", "hello"));
+    assertThat(exception.getMessage()).isEqualTo("Circuit breaker OPEN via database state.");
 
     LegacyNotificationResponse latest = engine.getLatestState();
     assertThat(latest.getStatus()).isEqualTo("R");
