@@ -1,4 +1,4 @@
-package com.example.homework.notification;
+package com.example.homework.notification.exception;
 
 import org.springframework.http.HttpStatus;
 

@@ -1,5 +1,7 @@
-package com.example.homework.notification;
+package com.example.homework.notification.exception;
 
+import com.example.homework.notification.controller.LegacyNotificationController;
+import com.example.homework.notification.model.LegacyNotificationErrorResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;

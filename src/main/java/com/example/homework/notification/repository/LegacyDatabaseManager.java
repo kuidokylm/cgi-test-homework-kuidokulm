@@ -1,10 +1,11 @@
-package com.example.homework.notification;
+package com.example.homework.notification.repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
 
+import com.example.homework.notification.model.LegacyNotificationResponse;
 import org.jspecify.annotations.NullMarked;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

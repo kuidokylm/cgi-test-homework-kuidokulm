@@ -1,12 +1,16 @@
-package com.example.homework.notification;
+package com.example.homework.notification.service;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.example.homework.notification.INotificationHandler;
+import com.example.homework.notification.exception.LegacyNotificationException;
 import com.example.homework.notification.handler.EmailNotificationHandler;
 import com.example.homework.notification.handler.PushNotificationHandler;
 import com.example.homework.notification.handler.SmsNotificationHandler;
+import com.example.homework.notification.model.LegacyNotificationResponse;
+import com.example.homework.notification.repository.LegacyDatabaseManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -33,11 +37,11 @@ public class LegacyNotificationEngine implements InitializingBean {
     registry.put("PUSH", new PushNotificationHandler());
   }
 
-  void registerHandler(String type, INotificationHandler handler) {
+  public void registerHandler(String type, INotificationHandler handler) {
     registry.put(type.trim().toUpperCase(), handler);
   }
 
-  void unRegisterHandler(String type) {
+  public void unRegisterHandler(String type) {
     registry.remove(type.trim().toUpperCase());
   }
 

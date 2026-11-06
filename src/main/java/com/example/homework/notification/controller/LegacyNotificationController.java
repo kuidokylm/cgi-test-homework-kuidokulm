@@ -1,7 +1,10 @@
-package com.example.homework.notification;
+package com.example.homework.notification.controller;
 
 import java.util.List;
 
+import com.example.homework.notification.service.LegacyNotificationEngine;
+import com.example.homework.notification.model.LegacyNotificationRequest;
+import com.example.homework.notification.model.LegacyNotificationResponse;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
