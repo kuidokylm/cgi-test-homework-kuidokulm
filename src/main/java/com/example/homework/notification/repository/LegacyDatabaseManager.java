@@ -10,6 +10,7 @@ import org.jspecify.annotations.NullMarked;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -174,8 +175,9 @@ public class LegacyDatabaseManager {
     try {
       return jdbcTemplate.update(sql, args);
     } catch (DataAccessException e) {
-      logger.error("Database error while attempting to {}.", operation, e);
-      throw e;
+      throw new DataAccessResourceFailureException(
+          "Database error while attempting to " + operation + ".",
+          e);
     }
   }
 
