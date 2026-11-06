@@ -37,11 +37,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
   public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload)
       throws Exception {
-
-    String safeType = type != null ? type.trim().toUpperCase() : "";
     String safeTarget = target != null ? target.trim() : null;
-    String safePayload = payload != null ? payload : "";
-
     if (safeTarget == null || safeTarget.isEmpty()) {
       throw new IllegalArgumentException("Target is mandatory.");
     }
@@ -49,6 +45,8 @@ public class LegacyNotificationEngine implements InitializingBean {
     if (dbManager.isUserBlacklistedOrRateLimited(safeTarget)) {
       throw new RuntimeException("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
     }
+    String safeType = type != null ? type.trim().toUpperCase() : "";
+    String safePayload = payload != null ? payload : "";
 
     long id = dbManager.openDispatch(safeType, safeTarget, safePayload);
 
@@ -82,6 +80,14 @@ public class LegacyNotificationEngine implements InitializingBean {
     return dbManager.getLatestState();
   }
 
+  public void insertIntoBlacklist(String target) {
+    dbManager.insertIntoBlacklist(target);
+  }
+
+  public void removeFromblacklist(String target) {
+    dbManager.removeFromBlacklist(target);
+  }
+
   public static class LegacyDatabaseManager {
 
     private final JdbcTemplate jdbcTemplate;
@@ -97,7 +103,6 @@ public class LegacyNotificationEngine implements InitializingBean {
         response.setStatus(rs.getString("notificationState"));
         response.setFailureCount(rs.getInt("failureCounter"));
         response.setDispatchCount(rs.getInt("dispatchCounter"));
-        response.setBlocked("Y".equals(rs.getString("isBlacklisted")) ? "Y" : "N");
         response.setMessage(rs.getString("lastMessage"));
 
         response.setCreatedAt(rs.getTimestamp("created"));
@@ -111,7 +116,17 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
 
     public boolean isUserBlacklistedOrRateLimited(String target) {
+      /*
       if (target != null && target.toLowerCase().contains("blocked")) {
+        return true;
+      } */
+
+      Boolean blacklisted = jdbcTemplate.queryForObject(
+              "select exists (select 1 from ntf_blacklist where targetDestination = ?)",
+              Boolean.class,
+              target);
+
+      if (Boolean.TRUE.equals(blacklisted)) {
         return true;
       }
 
@@ -126,17 +141,30 @@ public class LegacyNotificationEngine implements InitializingBean {
       return recentCount != null && recentCount >= 3;
     }
 
+    public void insertIntoBlacklist(String target) {
+      jdbcTemplate.update(
+          "insert into ntf_blacklist(targetDestination, created) values (?, ?)",
+          target,
+          new Timestamp(System.currentTimeMillis()));
+    }
+
+    public void removeFromBlacklist(String target) {
+      jdbcTemplate.update(
+          "delete from ntf_blacklist where targetDestination = ?",
+          target);
+      logger.info("Target {} removed from blacklist", target);
+    }
+
     public long openDispatch(final String type, final String target, final String payload) {
       final long id = getNextId();
       final int nextDispatchCount = getTotalDispatches() + 1;
       final int currentFailureCount = getFailureCountFromDatabase();
-      final String blocked = (target != null && target.toLowerCase().contains("blocked")) ? "Y" : "N";
       final Timestamp now = new Timestamp(System.currentTimeMillis());
 
       jdbcTemplate.update(
           "insert into ntf_tx(id, notificationType, targetDestination, payload, notificationState, "
-              + "failureCounter, dispatchCounter, isBlacklisted, lastMessage, created, updated) "
-              + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              + "failureCounter, dispatchCounter, lastMessage, created, updated) "
+              + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           id,
           type,
           target,
@@ -144,7 +172,6 @@ public class LegacyNotificationEngine implements InitializingBean {
           "N",
           currentFailureCount,
           nextDispatchCount,
-          blocked,
           "START",
           now,
           now);
@@ -295,6 +322,8 @@ public class LegacyNotificationEngine implements InitializingBean {
   private static class EmailHandler implements INotificationHandler {
     @Override
     public void execute(String target, String payload) throws Exception {
+
+
       if (target != null && target.contains("error")) {
         throw new Exception("SMTP Timeout");
       }

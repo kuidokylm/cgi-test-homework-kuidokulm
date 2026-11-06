@@ -8,6 +8,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.DirtiesContext;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 public class LegacyNotificationEngineIntegrationTest {
@@ -22,18 +25,27 @@ public class LegacyNotificationEngineIntegrationTest {
     assertThat(response.getStatus()).isEqualTo("S");
     assertThat(response.getDispatchCount()).isEqualTo(1);
     assertThat(response.getFailureCount()).isZero();
-    assertThat(engine.getHistory()).hasSize(1);
+    List<LegacyNotificationResponse> historyList = engine.getHistory();
+    assertThat(historyList).hasSize(1);
   }
 
   @Test
-  void blockedTargetFailsBeforeDispatchIsInserted() {
+  void blacklistEntryBlocksDispatchUntilRemoved() throws Exception {
+    engine.insertIntoBlacklist("buyer@example.com");
+    engine.insertIntoBlacklist("testbuyer@example.com");
+
     RuntimeException exception = assertThrows(
         RuntimeException.class,
-        () -> engine.processNotification("SMS", "blocked-user@example.com", "hello"));
+        () -> engine.processNotification("EMAIL", "buyer@example.com", "hello"));
     assertThat(exception.getMessage())
         .isEqualTo("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
-
     assertThat(engine.getHistory()).isEmpty();
+
+    engine.removeFromblacklist("buyer@example.com");
+    LegacyNotificationResponse response =
+        engine.processNotification("EMAIL", "buyer@example.com", "hello");
+    assertThat(response.getStatus()).isEqualTo("S");
+    engine.removeFromblacklist("testbuyer@example.com");
   }
 
   @Test
