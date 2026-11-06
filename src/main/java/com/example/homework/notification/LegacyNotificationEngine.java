@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.NullMarked;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -18,7 +19,7 @@ import org.springframework.stereotype.Service;
 public class LegacyNotificationEngine implements InitializingBean {
 
   private static final Logger logger = LoggerFactory.getLogger(LegacyNotificationEngine.class);
-  private static final Map<String, INotificationHandler> REGISTRY = new HashMap<String, INotificationHandler>();
+  private static final Map<String, INotificationHandler> REGISTRY = new HashMap<>();
 
   private final LegacyDatabaseManager dbManager;
 
@@ -84,8 +85,9 @@ public class LegacyNotificationEngine implements InitializingBean {
   public static class LegacyDatabaseManager {
 
     private final JdbcTemplate jdbcTemplate;
-    private final RowMapper<LegacyNotificationResponse> rowMapper = new RowMapper<LegacyNotificationResponse>() {
+    private final RowMapper<LegacyNotificationResponse> rowMapper = new RowMapper<>() {
       @Override
+      @NullMarked
       public LegacyNotificationResponse mapRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         LegacyNotificationResponse response = new LegacyNotificationResponse();
         response.setId(rs.getLong("id"));
@@ -121,7 +123,7 @@ public class LegacyNotificationEngine implements InitializingBean {
           Integer.class,
           target);
 
-      return recentCount != null && recentCount.intValue() >= 3;
+      return recentCount != null && recentCount >= 3;
     }
 
     public long openDispatch(final String type, final String target, final String payload) {
@@ -134,13 +136,13 @@ public class LegacyNotificationEngine implements InitializingBean {
       jdbcTemplate.update(
           "insert into ntf_tx(id, tp, tgt, pld, st, fc, dc, bl, lm, crt, upd) "
               + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          Long.valueOf(id),
+          id,
           type,
           target,
           payload,
           "N",
-          Integer.valueOf(currentFailureCount),
-          Integer.valueOf(nextDispatchCount),
+          currentFailureCount,
+          nextDispatchCount,
           blocked,
           "START",
           now,
@@ -153,22 +155,23 @@ public class LegacyNotificationEngine implements InitializingBean {
       Long maxId = jdbcTemplate.queryForObject(
           "select coalesce(max(id), 0) from ntf_tx",
           Long.class);
-      return (maxId == null ? 0L : maxId.longValue()) + 1L;
+      return (maxId == null ? 0L : maxId) + 1L;
     }
 
     public int getFailureCountFromDatabase() {
       List<Integer> results = jdbcTemplate.query(
           "select fc from ntf_tx order by id desc limit 1",
-          new RowMapper<Integer>() {
+          new RowMapper<>() {
             @Override
+            @NullMarked
             public Integer mapRow(ResultSet resultSet, int rowNum) throws SQLException {
-              return Integer.valueOf(resultSet.getInt(1));
+              return resultSet.getInt(1);
             }
           });
       if (results.isEmpty()) {
         return 0;
       }
-      return results.get(0).intValue();
+      return results.getFirst();
     }
 
     public void recordDatabaseFailure(String target, String error) {
@@ -178,12 +181,13 @@ public class LegacyNotificationEngine implements InitializingBean {
     public void recordDatabaseFailure(long id, String target, String error) {
       int nextFailureCount = getFailureCountFromDatabase() + 1;
       jdbcTemplate.update(
-          "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ? where id = ?",
+          "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ?, tgt = ? where id = ?",
           "E",
-          Integer.valueOf(nextFailureCount),
+          nextFailureCount,
           shorten(error),
           new Timestamp(System.currentTimeMillis()),
-          Long.valueOf(id));
+          target,
+          id);
       logger.warn("Recorded failure for notification dispatch {}: {}", id, error);
     }
 
@@ -198,10 +202,10 @@ public class LegacyNotificationEngine implements InitializingBean {
       jdbcTemplate.update(
           "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ? where id = ?",
           "S",
-          Integer.valueOf(0),
+          0,
           "SENT",
           new Timestamp(System.currentTimeMillis()),
-          Long.valueOf(id));
+          id);
     }
 
     public void recordUnsupportedType(long id, String type) {
@@ -210,7 +214,7 @@ public class LegacyNotificationEngine implements InitializingBean {
           "U",
           shorten("Unsupported type: " + type),
           new Timestamp(System.currentTimeMillis()),
-          Long.valueOf(id));
+          id);
     }
 
     public void markAsSkipped(long id, String message) {
@@ -219,7 +223,7 @@ public class LegacyNotificationEngine implements InitializingBean {
           "R",
           shorten(message),
           new Timestamp(System.currentTimeMillis()),
-          Long.valueOf(id));
+          id);
     }
 
     public int getTotalDispatches() {
@@ -229,7 +233,7 @@ public class LegacyNotificationEngine implements InitializingBean {
       if (latestDispatchCount == null) {
         return 0;
       }
-      return latestDispatchCount.intValue();
+      return latestDispatchCount;
     }
 
     public LegacyNotificationResponse getLatestState() {
@@ -239,14 +243,14 @@ public class LegacyNotificationEngine implements InitializingBean {
       if (items.isEmpty()) {
         return null;
       }
-      return items.get(0);
+      return items.getFirst();
     }
 
     public LegacyNotificationResponse getDispatchById(long id) {
       return jdbcTemplate.queryForObject(
           "select * from ntf_tx where id = ?",
           rowMapper,
-          Long.valueOf(id));
+          id);
     }
 
     public List<LegacyNotificationResponse> getHistory() {
@@ -258,16 +262,17 @@ public class LegacyNotificationEngine implements InitializingBean {
     private long findLatestId() {
       List<Long> ids = jdbcTemplate.query(
           "select id from ntf_tx order by id desc limit 1",
-          new RowMapper<Long>() {
+          new RowMapper<>() {
             @Override
+            @NullMarked
             public Long mapRow(ResultSet resultSet, int rowNum) throws SQLException {
-              return Long.valueOf(resultSet.getLong(1));
+              return resultSet.getLong(1);
             }
           });
       if (ids.isEmpty()) {
         return 0L;
       }
-      return ids.get(0).longValue();
+      return ids.getFirst();
     }
 
     private String shorten(String value) {
@@ -289,7 +294,7 @@ public class LegacyNotificationEngine implements InitializingBean {
     @Override
     public void execute(String target, String payload) throws Exception {
       if (target != null && target.contains("error")) {
-        throw new RuntimeException("SMTP Timeout");
+        throw new Exception("SMTP Timeout");
       }
       logger.info("EMAIL notification dispatched");
     }
