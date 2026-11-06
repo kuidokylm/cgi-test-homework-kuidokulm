@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.example.homework.notification.controller.LegacyNotificationController;
 import com.example.homework.notification.exception.LegacyNotificationException;
 import com.example.homework.notification.exception.LegacyNotificationExceptionHandler;
+import com.example.homework.notification.handler.INotificationHandler;
 import com.example.homework.notification.model.LegacyNotificationResponse;
 import com.example.homework.notification.service.LegacyNotificationEngine;
 import org.springframework.beans.factory.annotation.Autowired;

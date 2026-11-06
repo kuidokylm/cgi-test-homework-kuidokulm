@@ -1,6 +1,5 @@
 package com.example.homework.notification.handler;
 
-import com.example.homework.notification.INotificationHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
