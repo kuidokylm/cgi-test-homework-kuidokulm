@@ -10,6 +10,7 @@ import java.util.Map;
 import org.jspecify.annotations.NullMarked;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -146,17 +147,19 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
 
     public void insertIntoBlacklist(String target) {
-      jdbcTemplate.update(
+      executeUpdate(
+          "insertIntoBlacklist",
           "insert into ntf_blacklist(targetDestination, created) values (?, ?)",
           target,
           new Timestamp(System.currentTimeMillis()));
     }
 
     public void removeFromBlacklist(String target) {
-      jdbcTemplate.update(
+      int deletedRows = executeUpdate(
+          "removeFromBlacklist",
           "delete from ntf_blacklist where targetDestination = ?",
           target);
-      logger.info("Target {} removed from blacklist", target);
+      logger.info("Removed {} blacklist entry/entries", deletedRows);
     }
 
     public long openDispatch(final String type, final String target, final String payload) {
@@ -165,7 +168,8 @@ public class LegacyNotificationEngine implements InitializingBean {
       final int currentFailureCount = getFailureCountFromDatabase();
       final Timestamp now = new Timestamp(System.currentTimeMillis());
 
-      jdbcTemplate.update(
+      executeUpdate(
+          "openDispatch",
           "insert into ntf_tx(id, notificationType, targetDestination, payload, notificationState, "
               + "failureCounter, dispatchCounter, lastMessage, created) "
               + "values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -211,7 +215,8 @@ public class LegacyNotificationEngine implements InitializingBean {
 
     public void recordDatabaseFailure(long id, String target, String error) {
       int nextFailureCount = getFailureCountFromDatabase() + 1;
-      jdbcTemplate.update(
+      executeUpdate(
+          "recordDatabaseFailure",
           "update ntf_tx set notificationState = ?, failureCounter = ?, lastMessage = ?, "
               + "updated = ?, targetDestination = ? where id = ?",
           "E",
@@ -231,7 +236,8 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
 
     public void resetDatabaseFailures(long id) {
-      jdbcTemplate.update(
+      executeUpdate(
+          "resetDatabaseFailures",
           "update ntf_tx set notificationState = ?, failureCounter = ?, lastMessage = ?, updated = ? where id = ?",
           "S",
           0,
@@ -241,7 +247,8 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
 
     public void recordUnsupportedType(long id, String type) {
-      jdbcTemplate.update(
+      executeUpdate(
+          "recordUnsupportedType",
           "update ntf_tx set notificationState = ?, lastMessage = ?, updated = ? where id = ?",
           "U",
           shorten("Unsupported type: " + type),
@@ -250,12 +257,22 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
 
     public void markAsSkipped(long id, String message) {
-      jdbcTemplate.update(
+      executeUpdate(
+          "markAsSkipped",
           "update ntf_tx set notificationState = ?, lastMessage = ?, updated = ? where id = ?",
           "R",
           shorten(message),
           new Timestamp(System.currentTimeMillis()),
           id);
+    }
+
+    private int executeUpdate(String operation, String sql, Object... args) {
+      try {
+        return jdbcTemplate.update(sql, args);
+      } catch (DataAccessException e) {
+        logger.error("Database error while attempting to {}.", operation, e);
+        throw e;
+      }
     }
 
     public int getTotalDispatches() {
