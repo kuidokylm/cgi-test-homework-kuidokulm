@@ -187,7 +187,7 @@ public class LegacyDatabaseManager {
       return query.get();
     } catch (DataAccessException e) {
       throw new DataAccessResourceFailureException(
-          "Database error while attempting to " + operation + ".",
+          "Database error while attempting to " + operation + " "+e.getMessage(),
           e);
     }
   }
@@ -197,7 +197,7 @@ public class LegacyDatabaseManager {
       jdbcTemplate.update(sql, args);
     } catch (DataAccessException e) {
       throw new DataAccessResourceFailureException(
-          "Database error while attempting to " + operation + ".",
+          "Database error while attempting to " + operation + " "+e.getMessage(),
           e);
     }
   }
