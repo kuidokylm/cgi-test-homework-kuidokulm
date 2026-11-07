@@ -112,7 +112,7 @@ public class LegacyDatabaseManager {
     Long maxId = executeQuery(
         "getNextId",
         () -> jdbcTemplate.queryForObject(
-            "select coalesce(max(id), 0) from ntf_tx",
+            "select max(id) from ntf_tx",
             Long.class));
     return (maxId == null ? 0L : maxId) + 1L;
   }
