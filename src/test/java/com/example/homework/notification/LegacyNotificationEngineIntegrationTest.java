@@ -66,6 +66,18 @@ public class LegacyNotificationEngineIntegrationTest {
   }
 
   @Test
+  void invalidEmailTargetIsRejectedBeforeDispatch() {
+    //when
+    RuntimeException exception = assertThrows(
+        RuntimeException.class,
+        () -> engine.processNotification("EMAIL", "invalid-email", "hello"));
+
+    //then
+    assertThat(exception).isInstanceOf(LegacyNotificationException.InvalidEmailTarget.class);
+    assertThat(engine.getHistory()).isEmpty();
+  }
+
+  @Test
   void databaseFailureWhileGettingFailureCountBlocksDispatchUntilDatabaseRecovers() {
     //given
     doThrow(new DataAccessResourceFailureException("Database error while attempting to"))

@@ -3,6 +3,7 @@ package com.example.homework.notification.service;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import com.example.homework.notification.handler.INotificationHandler;
 import com.example.homework.notification.exception.LegacyNotificationException;
@@ -21,6 +22,8 @@ import org.springframework.stereotype.Service;
 public class LegacyNotificationEngine implements InitializingBean {
 
   private static final Logger logger = LoggerFactory.getLogger(LegacyNotificationEngine.class);
+  private static final Pattern EMAIL_ADDRESS =
+      Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
   private final Map<String, INotificationHandler> registry = new HashMap<>();
   private final LegacyDatabaseManager dbManager;
@@ -47,9 +50,10 @@ public class LegacyNotificationEngine implements InitializingBean {
 
   public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload) {
     String safeTarget = target != null ? target.trim() : null;
-    validateTarget(safeTarget);
-
     String safeType = type != null ? type.trim().toUpperCase() : "";
+    validateTarget(safeTarget, safeType);
+
+
     String safePayload = payload != null ? payload : "";
 
     long id;
@@ -81,9 +85,13 @@ public class LegacyNotificationEngine implements InitializingBean {
     }
   }
 
-  private void validateTarget(String safeTarget) {
+  private void validateTarget(String safeTarget, String safeType) {
     if (safeTarget == null || safeTarget.isEmpty()) {
       throw new LegacyNotificationException.InvalidTarget();
+    }
+
+    if ("EMAIL".equals(safeType) && !EMAIL_ADDRESS.matcher(safeTarget).matches()) {
+      throw new LegacyNotificationException.InvalidEmailTarget();
     }
 
     if (dbManager.isUserBlacklistedOrRateLimited(safeTarget)) {

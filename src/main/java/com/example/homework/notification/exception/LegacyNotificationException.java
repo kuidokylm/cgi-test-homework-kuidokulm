@@ -33,6 +33,12 @@ public class LegacyNotificationException extends RuntimeException {
     }
   }
 
+  public static final class InvalidEmailTarget extends LegacyNotificationException {
+    public InvalidEmailTarget() {
+      super("INVALID_TARGET", HttpStatus.BAD_REQUEST, "Email target must be a valid email address.");
+    }
+  }
+
   public static final class RecipientRejected extends LegacyNotificationException {
     public RecipientRejected() {
       super(
