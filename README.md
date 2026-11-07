@@ -83,3 +83,13 @@ The application requires Java 25 and uses the Gradle wrapper.
 
 - Run the service with `gradlew.bat bootRun` on Windows or `./gradlew bootRun` on macOS/Linux.
 - Run the tests with `gradlew.bat test` on Windows or `./gradlew test` on macOS/Linux.
+
+## Environment profiles
+
+The application has separate Spring configuration profiles:
+
+- `dev` (default) uses an H2 in-memory database and initializes the schema.
+- `test` uses a separate H2 in-memory database; Gradle activates this profile for tests.
+- `prod` expects `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` to be supplied by the deployment environment. Schema initialization is disabled to prevent the development schema script from dropping production tables. The JDBC driver for the production database must be available at runtime.
+
+Activate production configuration with `--spring.profiles.active=prod` when launching the application. Override the default profile with `--spring.profiles.active=dev` as needed.
