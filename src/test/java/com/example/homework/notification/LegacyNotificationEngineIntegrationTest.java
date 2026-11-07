@@ -48,6 +48,30 @@ public class LegacyNotificationEngineIntegrationTest {
   }
 
   @Test
+  void multipleTypesOfMessagesSuccessIsStoredAsSent() {
+
+    //given
+    int randomCount = java.util.concurrent.ThreadLocalRandom.current().nextInt(4, 7);
+    //when
+    for (int i = 0; i < randomCount; i++) {
+      switch (i % 3) {
+        case 0 -> engine.processNotification("EMAIL", "email-user@example.com", "boom");
+        case 1 -> engine.processNotification("SMS", "sms-user", "SMS boom");
+        default -> engine.processNotification("PUSH", "sms-push", "PUSH boom");
+      }
+    }
+    //then
+    List<LegacyNotificationResponse> historyList = engine.getHistory();
+    assertThat(historyList).hasSize(randomCount);
+
+    assertThat(engine.getLatestState().getDispatchCount()).isEqualTo(randomCount);
+    assertThat(engine.getLatestState().getFailureCount()).isZero();
+    assertThat(engine.getLatestState().getStatus()).isEqualTo("S");
+
+
+  }
+
+  @Test
   void blacklistEntryBlocksDispatchUntilRemoved() {
     engine.insertIntoBlacklist("buyer@example.com");
     engine.insertIntoBlacklist("testbuyer@example.com");
