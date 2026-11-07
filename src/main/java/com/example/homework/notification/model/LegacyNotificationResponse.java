@@ -13,7 +13,6 @@ public class LegacyNotificationResponse {
   private String status;
   private int failureCount;
   private int dispatchCount;
-  private String blocked;
   private String message;
   private Timestamp createdAt;
   @Nullable
@@ -73,14 +72,6 @@ public class LegacyNotificationResponse {
 
   public void setDispatchCount(int dispatchCount) {
     this.dispatchCount = dispatchCount;
-  }
-
-  public String getBlocked() {
-    return blocked;
-  }
-
-  public void setBlocked(String blocked) {
-    this.blocked = blocked;
   }
 
   public String getMessage() {
