@@ -206,7 +206,7 @@ public class LegacyDatabaseManager {
     Integer latestDispatchCount = executeQuery(
         "getTotalDispatches",
         () -> jdbcTemplate.queryForObject(
-            "select coalesce(max(dispatchCounter), 0) from ntf_tx",
+            "select max(dispatchCounter) from ntf_tx",
             Integer.class));
     if (latestDispatchCount == null) {
       return 0;
