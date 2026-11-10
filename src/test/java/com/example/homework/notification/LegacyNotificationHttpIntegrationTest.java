@@ -40,11 +40,36 @@ public class LegacyNotificationHttpIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
+    void sendAndReadEndpointsExposeNotificationStateOverHttp() throws Exception {
+        MockMvc mockMvc = createMockMvc();
+
+        mockMvc.perform(post("/api/legacy/notifications/send")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                {"type":"EMAIL","target":"http-user@example.com","payload":"hello"}
+                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.type").value("EMAIL"))
+                .andExpect(jsonPath("$.target").value("http-user@example.com"))
+                .andExpect(jsonPath("$.payload").value("hello"))
+                .andExpect(jsonPath("$.status").value("S"))
+                .andExpect(jsonPath("$.dispatchCount").value(1));
+
+        mockMvc.perform(get("/api/legacy/notifications/latest"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.target").value("http-user@example.com"))
+                .andExpect(jsonPath("$.status").value("S"));
+
+        mockMvc.perform(get("/api/legacy/notifications/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$").isNotEmpty())
+                .andExpect(jsonPath("$[0].target").value("http-user@example.com"));
+    }
+
+    @Test
     void controllerMapsNotificationExceptionsToHttpStatuses() throws Exception {
-        MockMvc mockMvc = MockMvcBuilders
-                .standaloneSetup(new LegacyNotificationController(engine))
-                .setControllerAdvice(new LegacyNotificationExceptionHandler())
-                .build();
+        MockMvc mockMvc = createMockMvc();
 
         mockMvc.perform(post("/api/legacy/notifications/send")
                         .contentType(APPLICATION_JSON)
@@ -59,10 +84,35 @@ public class LegacyNotificationHttpIntegrationTest {
         mockMvc.perform(post("/api/legacy/notifications/send")
                         .contentType(APPLICATION_JSON)
                         .content("""
-                {"type":"EMAIL","target":"blocked@example.com","payload":"hello"}
+                {"type":"EMAIL","target":"blocked@example.com ","payload":"hello"}
                 """))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("RECIPIENT_REJECTED"));
+
+        mockMvc.perform(post("/api/legacy/notifications/send")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                {"type":"EMAIL","payload":"hello"}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_TARGET"));
+
+        mockMvc.perform(post("/api/legacy/notifications/send")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                {"target":"helper@example.com ","payload":"hello"}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+
+        mockMvc.perform(post("/api/legacy/notifications/send")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                {"target":"missingpayload@example.com "}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+
 
         mockMvc.perform(post("/api/legacy/notifications/send")
                         .contentType(APPLICATION_JSON)
@@ -111,10 +161,7 @@ public class LegacyNotificationHttpIntegrationTest {
                 .when(jdbcTemplate)
                 .query(eq(HISTORY_QUERY), ArgumentMatchers.<RowMapper<?>>any());
 
-        MockMvc mockMvc = MockMvcBuilders
-                .standaloneSetup(new LegacyNotificationController(engine))
-                .setControllerAdvice(new LegacyNotificationExceptionHandler())
-                .build();
+        MockMvc mockMvc = createMockMvc();
 
         //when
         mockMvc.perform(get("/api/legacy/notifications/history"))
@@ -124,5 +171,12 @@ public class LegacyNotificationHttpIntegrationTest {
                 .andExpect(jsonPath("$.message").value(
                         containsString("Database error while attempting to getHistory")))
                 .andReturn();
+    }
+
+    private MockMvc createMockMvc() {
+        return MockMvcBuilders
+                .standaloneSetup(new LegacyNotificationController(engine))
+                .setControllerAdvice(new LegacyNotificationExceptionHandler())
+                .build();
     }
 }

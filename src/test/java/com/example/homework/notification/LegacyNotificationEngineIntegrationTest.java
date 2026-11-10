@@ -37,6 +37,28 @@ public class LegacyNotificationEngineIntegrationTest {
   private JdbcTemplate jdbcTemplate;
 
   @Test
+  void latestStateIsNullWhenThereAreNoDispatches() {
+    assertThat(engine.getLatestState()).isNull();
+  }
+
+  @Test
+  void updateFailureIsWrappedWithOperationContext() {
+    DataAccessResourceFailureException databaseFailure =
+        new DataAccessResourceFailureException("Database unavailable");
+    doThrow(databaseFailure)
+        .when(jdbcTemplate)
+        .update(eq("delete from ntf_blacklist where targetDestination = ?"), ArgumentMatchers.<Object[]>any());
+
+    DataAccessResourceFailureException exception = assertThrows(
+        DataAccessResourceFailureException.class,
+        () -> engine.removeFromBlacklist("buyer@example.com"));
+
+    assertThat(exception)
+        .hasMessageContaining("Database error while attempting to removeFromBlacklist")
+        .hasCause(databaseFailure);
+  }
+
+  @Test
   void emailSuccessIsStoredAsSent() {
     LegacyNotificationResponse response = engine.processNotification("EMAIL", "buyer@example.com", "hello");
 
