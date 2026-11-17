@@ -23,7 +23,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
   private static final Logger logger = LoggerFactory.getLogger(LegacyNotificationEngine.class);
   private static final Pattern EMAIL_ADDRESS =
-      Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+      Pattern.compile("^[^\\s@]++@(?>[^\\s@]+\\.(?=[^\\s@]))[^\\s@]++$");
 
   private final Map<String, INotificationHandler> registry = new HashMap<>();
   private final LegacyDatabaseManager dbManager;
