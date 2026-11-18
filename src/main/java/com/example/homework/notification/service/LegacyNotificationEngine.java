@@ -1,56 +1,40 @@
 package com.example.homework.notification.service;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 import com.example.homework.notification.handler.INotificationHandler;
 import com.example.homework.notification.exception.LegacyNotificationException;
-import com.example.homework.notification.handler.EmailNotificationHandler;
-import com.example.homework.notification.handler.PushNotificationHandler;
-import com.example.homework.notification.handler.SmsNotificationHandler;
 import com.example.homework.notification.model.LegacyNotificationResponse;
 import com.example.homework.notification.repository.LegacyDatabaseManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.InitializingBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
-public class LegacyNotificationEngine implements InitializingBean {
+public class LegacyNotificationEngine {
 
   private static final Logger logger = LoggerFactory.getLogger(LegacyNotificationEngine.class);
   private static final Pattern EMAIL_ADDRESS =
       Pattern.compile("^[^\\s@]++@(?>[^\\s@]+\\.(?=[^\\s@]))[^\\s@]++$");
 
-  private final Map<String, INotificationHandler> registry = new HashMap<>();
+  private final Map<String, INotificationHandler> registry;
   private final LegacyDatabaseManager dbManager;
 
-  public LegacyNotificationEngine(JdbcTemplate jdbcTemplate) {
+  public LegacyNotificationEngine(
+      JdbcTemplate jdbcTemplate, List<INotificationHandler> handlers) {
     this.dbManager = new LegacyDatabaseManager(jdbcTemplate);
-  }
-
-  @Override
-  public void afterPropertiesSet() {
-    registry.clear();
-    registry.put("EMAIL", new EmailNotificationHandler());
-    registry.put("SMS", new SmsNotificationHandler());
-    registry.put("PUSH", new PushNotificationHandler());
-  }
-
-  public void registerHandler(String type, INotificationHandler handler) {
-    registry.put(type.trim().toUpperCase(), handler);
-  }
-
-  public void unRegisterHandler(String type) {
-    registry.remove(type.trim().toUpperCase());
+    this.registry = createRegistry(handlers);
   }
 
   public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload) {
     String safeTarget = target != null ? target.trim() : null;
-    String safeType = type != null ? type.trim().toUpperCase() : "";
+    String safeType = type != null ? type.trim().toUpperCase(Locale.ROOT) : "";
     validateTarget(safeTarget, safeType);
 
 
@@ -83,6 +67,23 @@ public class LegacyNotificationEngine implements InitializingBean {
       dbManager.recordDatabaseFailure(id, safeTarget, e.getMessage());
       throw new LegacyNotificationException.DispatchFailed(e);
     }
+  }
+
+  private static Map<String, INotificationHandler> createRegistry(
+      List<INotificationHandler> handlers) {
+    Map<String, INotificationHandler> registry = new HashMap<>();
+    for (INotificationHandler handler : handlers) {
+      String type = handler.supportedType();
+      if (type == null || type.isBlank()) {
+        throw new IllegalStateException(
+            "Notification handler " + handler.getClass().getName()
+                + " must declare a non-blank supported type");
+      }
+
+      String normalizedType = type.trim().toUpperCase(Locale.ROOT);
+      registry.put(normalizedType, handler);
+    }
+    return Collections.unmodifiableMap(registry);
   }
 
   private void validateTarget(String safeTarget, String safeType) {

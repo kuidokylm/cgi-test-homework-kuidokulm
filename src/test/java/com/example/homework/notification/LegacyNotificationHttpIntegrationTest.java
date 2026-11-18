@@ -2,7 +2,7 @@ package com.example.homework.notification;
 
 import com.example.homework.notification.controller.LegacyNotificationController;
 import com.example.homework.notification.exception.LegacyNotificationExceptionHandler;
-import com.example.homework.notification.handler.INotificationHandler;
+import com.example.homework.notification.handler.EmailNotificationHandler;
 import com.example.homework.notification.service.LegacyNotificationEngine;
 import org.mockito.ArgumentMatchers;
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,6 +37,9 @@ public class LegacyNotificationHttpIntegrationTest {
 
     @MockitoSpyBean
     private JdbcTemplate jdbcTemplate;
+
+    @MockitoSpyBean
+    private EmailNotificationHandler emailHandler;
 
     @Test
     void sendAndReadEndpointsExposeNotificationStateOverHttp() throws Exception {
@@ -124,11 +126,9 @@ public class LegacyNotificationHttpIntegrationTest {
                 .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
                 .andExpect(jsonPath("$.message").value("Unsupported type: FAX"));
 
-        INotificationHandler failingHandler = mock(INotificationHandler.class);
         doThrow(new Exception("SMTP Timeout"))
-                .when(failingHandler)
+                .when(emailHandler)
                 .execute(anyString(), anyString());
-        engine.registerHandler("EMAIL", failingHandler);
 
         for (int attempt = 1; attempt <= 3; attempt++) {
             mockMvc.perform(post("/api/legacy/notifications/send")

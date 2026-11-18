@@ -5,10 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 
 import com.example.homework.notification.exception.LegacyNotificationException;
-import com.example.homework.notification.handler.INotificationHandler;
+import com.example.homework.notification.handler.EmailNotificationHandler;
 import com.example.homework.notification.model.LegacyNotificationResponse;
 import com.example.homework.notification.service.LegacyNotificationEngine;
 import org.mockito.ArgumentMatchers;
@@ -35,6 +34,9 @@ public class LegacyNotificationEngineIntegrationTest {
 
   @MockitoSpyBean
   private JdbcTemplate jdbcTemplate;
+
+  @MockitoSpyBean
+  private EmailNotificationHandler emailHandler;
 
   @Test
   void latestStateIsNullWhenThereAreNoDispatches() {
@@ -74,7 +76,7 @@ public class LegacyNotificationEngineIntegrationTest {
 
     //given
     int randomCount = java.util.concurrent.ThreadLocalRandom.current().nextInt(4, 7);
-    //when
+     //when
     for (int i = 0; i < randomCount; i++) {
       switch (i % 3) {
         case 0 -> engine.processNotification("EMAIL", "email-user@example.com", "boom");
@@ -161,11 +163,9 @@ public class LegacyNotificationEngineIntegrationTest {
   @Test
   void threeFailuresOpenCircuitBreakerForNextAttempt() throws Exception {
     //given
-    INotificationHandler emailHandler = mock(INotificationHandler.class);
     doThrow(new Exception("SMTP Timeout"))
         .when(emailHandler)
         .execute(anyString(), anyString());
-    engine.registerHandler("EMAIL", emailHandler);
 
     //when
     for (int i = 0; i < 3; i++) {
@@ -178,7 +178,6 @@ public class LegacyNotificationEngineIntegrationTest {
       assertThat(exception.getCause().getMessage()).isEqualTo("SMTP Timeout");
     }
 
-    engine.unRegisterHandler("EMAIL");
    //when
     RuntimeException exception = assertThrows(
         RuntimeException.class,
