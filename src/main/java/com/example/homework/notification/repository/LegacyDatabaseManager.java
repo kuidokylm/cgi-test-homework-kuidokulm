@@ -14,7 +14,9 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Repository;
 
+@Repository
 public class LegacyDatabaseManager {
 
   private static final Logger logger = LoggerFactory.getLogger(LegacyDatabaseManager.class);

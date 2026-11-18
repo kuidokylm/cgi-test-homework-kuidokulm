@@ -5,9 +5,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.example.homework.notification.handler.INotificationHandler;
+import com.example.homework.notification.repository.LegacyDatabaseManager;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 class LegacyNotificationEngineTest {
 
@@ -21,7 +21,8 @@ class LegacyNotificationEngineTest {
 
     //then
     assertThatThrownBy(
-            () -> new LegacyNotificationEngine(mock(JdbcTemplate.class), List.of(handler)))
+            () -> new LegacyNotificationEngine(
+                mock(LegacyDatabaseManager.class), List.of(handler)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("must declare a non-blank supported type");
   }
@@ -32,7 +33,8 @@ class LegacyNotificationEngineTest {
     when(handler.supportedType()).thenReturn("  ");
 
     assertThatThrownBy(
-            () -> new LegacyNotificationEngine(mock(JdbcTemplate.class), List.of(handler)))
+            () -> new LegacyNotificationEngine(
+                mock(LegacyDatabaseManager.class), List.of(handler)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("must declare a non-blank supported type");
   }

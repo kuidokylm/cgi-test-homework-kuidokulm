@@ -13,7 +13,6 @@ import com.example.homework.notification.model.LegacyNotificationResponse;
 import com.example.homework.notification.repository.LegacyDatabaseManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -27,8 +26,8 @@ public class LegacyNotificationEngine {
   private final LegacyDatabaseManager dbManager;
 
   public LegacyNotificationEngine(
-      JdbcTemplate jdbcTemplate, List<INotificationHandler> handlers) {
-    this.dbManager = new LegacyDatabaseManager(jdbcTemplate);
+      LegacyDatabaseManager dbManager, List<INotificationHandler> handlers) {
+    this.dbManager = dbManager;
     this.registry = createRegistry(handlers);
   }
 
