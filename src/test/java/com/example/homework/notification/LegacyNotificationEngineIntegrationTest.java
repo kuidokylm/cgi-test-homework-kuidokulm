@@ -161,7 +161,7 @@ public class LegacyNotificationEngineIntegrationTest {
   }
 
   @Test
-  void threeFailuresOpenCircuitBreakerForNextAttempt() throws Exception {
+  void threeFailuresOpenCircuitBreakerForNextAttempt() {
     //given
     doThrow(new Exception("SMTP Timeout"))
         .when(emailHandler)
