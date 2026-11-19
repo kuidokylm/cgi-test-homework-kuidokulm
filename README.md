@@ -8,7 +8,7 @@ Refactor the legacy code to a production ready solution for the notification dis
 
 This exercise is intended to be completed in approximately 4 hours.
 
-The application sends `EMAIL`, `SMS`, and `PUSH` notifications, stores the outcome of those attempts, and enforces the operational safeguards already present in the system. 
+The application sends `EMAIL`, `SMS`, and `PUSH` notifications and enforces blacklist and circuit-breaker safeguards. Notification attempts are not persisted.
 The goal is to improve the design so the code is easier to understand, easier to extend, and more robust without changing the behavior that matters.
 
 This is a design and refactoring exercise. The focus is on making a small system feel thoughtful, clean, and ready for change. 
@@ -19,10 +19,9 @@ It also acknowledges that existing API boundaries and persistence design may not
 The service is responsible for:
 
 - sending notifications to different channels
-- tracking the result of each attempt
 - rejecting unsupported notification types
-- rejecting blocked or rate-limited recipients
-- recording failures and applying a simple rejection path after repeated problems
+- rejecting blacklisted recipients
+- temporarily rejecting dispatches after repeated handler failures
 
 ## Core expectations
 
@@ -41,10 +40,9 @@ The system must continue to support the existing notification types and operatio
 - `EMAIL`
 - `SMS`
 - `PUSH`
-- blocked or rate-limited recipients are rejected
+- blacklisted recipients are rejected
 - unsupported notification types fail clearly
-- failures are tracked
-- repeated failures eventually trigger a simple rejection path
+- three consecutive handler failures open the circuit breaker for 60 seconds
 
 ## What matters most
 

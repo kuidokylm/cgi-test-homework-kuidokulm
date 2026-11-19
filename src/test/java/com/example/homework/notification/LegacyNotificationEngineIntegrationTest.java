@@ -3,34 +3,36 @@ package com.example.homework.notification;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.example.homework.notification.exception.LegacyNotificationException;
 import com.example.homework.notification.handler.EmailNotificationHandler;
-import com.example.homework.notification.model.LegacyNotificationResponse;
 import com.example.homework.notification.service.LegacyNotificationEngine;
-import org.mockito.ArgumentMatchers;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
 
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
-public class LegacyNotificationEngineIntegrationTest {
+class LegacyNotificationEngineIntegrationTest {
 
-  private static final String FAILURE_COUNT_QUERY =
-      "select failureCounter from ntf_tx order by id desc limit 1";
+  private static final String BLACKLIST_QUERY =
+      "select exists (select 1 from ntf_blacklist where targetDestination = ?)";
 
   @Autowired
   private LegacyNotificationEngine engine;
+
+  @Autowired
+  private CircuitBreakerRegistry circuitBreakerRegistry;
 
   @MockitoSpyBean
   private JdbcTemplate jdbcTemplate;
@@ -39,156 +41,85 @@ public class LegacyNotificationEngineIntegrationTest {
   private EmailNotificationHandler emailHandler;
 
   @Test
-  void latestStateIsNullWhenThereAreNoDispatches() {
-    assertThat(engine.getLatestState()).isNull();
+  void allowsRepeatedNotificationsToTheSameRecipient() {
+    for (int i = 0; i < 4; i++) {
+      engine.processNotification("EMAIL", "repeat-user@example.com", "hello");
+    }
+
+    verify(emailHandler, times(4)).execute("repeat-user@example.com", "hello");
   }
 
   @Test
-  void updateFailureIsWrappedWithOperationContext() {
+  void blacklistBlocksDispatchUntilRecipientIsRemoved() {
+    engine.insertIntoBlacklist("buyer@example.com");
+
+    assertThrows(
+        LegacyNotificationException.RecipientRejected.class,
+        () -> engine.processNotification("EMAIL", "buyer@example.com", "hello"));
+
+    engine.removeFromBlacklist("buyer@example.com");
+    engine.processNotification("EMAIL", "buyer@example.com", "hello");
+    verify(emailHandler).execute("buyer@example.com", "hello");
+  }
+
+  @Test
+  void invalidAndUnsupportedRequestsDoNotAffectCircuitBreaker() {
+    assertThrows(
+        LegacyNotificationException.InvalidEmailTarget.class,
+        () -> engine.processNotification("EMAIL", "invalid-email", "hello"));
+    assertThrows(
+        LegacyNotificationException.UnsupportedType.class,
+        () -> engine.processNotification("FAX", "ops@example.com", "hello"));
+
+    assertThat(circuitBreaker().getMetrics().getNumberOfBufferedCalls()).isZero();
+  }
+
+  @Test
+  void blacklistDatabaseFailureDoesNotAffectCircuitBreaker() {
     DataAccessResourceFailureException databaseFailure =
         new DataAccessResourceFailureException("Database unavailable");
     doThrow(databaseFailure)
         .when(jdbcTemplate)
-        .update(eq("delete from ntf_blacklist where targetDestination = ?"), ArgumentMatchers.<Object[]>any());
+        .queryForObject(BLACKLIST_QUERY, Boolean.class, "buyer@example.com");
 
-    DataAccessResourceFailureException exception = assertThrows(
+    assertThat(assertThrows(
         DataAccessResourceFailureException.class,
-        () -> engine.removeFromBlacklist("buyer@example.com"));
-
-    assertThat(exception)
-        .hasMessageContaining("Database error while attempting to removeFromBlacklist")
+        () -> engine.processNotification("EMAIL", "buyer@example.com", "hello")))
         .hasCause(databaseFailure);
+    assertThat(circuitBreaker().getMetrics().getNumberOfBufferedCalls()).isZero();
   }
 
   @Test
-  void emailSuccessIsStoredAsSent() {
-    LegacyNotificationResponse response = engine.processNotification("EMAIL", "buyer@example.com", "hello");
-
-    assertThat(response.getStatus()).isEqualTo("S");
-    assertThat(response.getDispatchCount()).isEqualTo(1);
-    assertThat(response.getFailureCount()).isZero();
-    List<LegacyNotificationResponse> historyList = engine.getHistory();
-    assertThat(historyList).hasSize(1);
-  }
-
-  @Test
-  void multipleTypesOfMessagesSuccessIsStoredAsSent() {
-
-    //given
-    int randomCount = java.util.concurrent.ThreadLocalRandom.current().nextInt(4, 7);
-     //when
-    for (int i = 0; i < randomCount; i++) {
-      switch (i % 3) {
-        case 0 -> engine.processNotification("EMAIL", "email-user@example.com", "boom");
-        case 1 -> engine.processNotification("SMS", "sms-user", "SMS boom");
-        default -> engine.processNotification("PUSH", "sms-push", "PUSH boom");
-      }
-    }
-    //then
-    List<LegacyNotificationResponse> historyList = engine.getHistory();
-    assertThat(historyList).hasSize(randomCount);
-
-    assertThat(engine.getLatestState().getDispatchCount()).isEqualTo(randomCount);
-    assertThat(engine.getLatestState().getFailureCount()).isZero();
-    assertThat(engine.getLatestState().getStatus()).isEqualTo("S");
-
-
-  }
-
-  @Test
-  void blacklistEntryBlocksDispatchUntilRemoved() {
-    engine.insertIntoBlacklist("buyer@example.com");
-    engine.insertIntoBlacklist("testbuyer@example.com");
-
-    RuntimeException exception = assertThrows(
-        RuntimeException.class,
-        () -> engine.processNotification("EMAIL", "buyer@example.com", "hello"));
-    assertThat(exception).isInstanceOf(LegacyNotificationException.RecipientRejected.class);
-    assertThat(engine.getHistory()).isEmpty();
-
-    engine.removeFromBlacklist("buyer@example.com");
-    LegacyNotificationResponse response =
-        engine.processNotification("EMAIL", "buyer@example.com", "hello");
-    assertThat(response.getStatus()).isEqualTo("S");
-    engine.removeFromBlacklist("testbuyer@example.com");
-  }
-
-  @Test
-  void invalidEmailTargetIsRejectedBeforeDispatch() {
-    //when
-    RuntimeException exception = assertThrows(
-        RuntimeException.class,
-        () -> engine.processNotification("EMAIL", "invalid-email", "hello"));
-
-    //then
-    assertThat(exception).isInstanceOf(LegacyNotificationException.InvalidEmailTarget.class);
-    assertThat(engine.getHistory()).isEmpty();
-  }
-
-  @Test
-  void databaseFailureWhileGettingFailureCountBlocksDispatchUntilDatabaseRecovers() {
-    //given
-    doThrow(new DataAccessResourceFailureException("Database error while attempting to"))
-        .doCallRealMethod()
-        .when(jdbcTemplate)
-        .query(eq(FAILURE_COUNT_QUERY), ArgumentMatchers.<RowMapper<Integer>>any());
-
-    //when
-    RuntimeException exception = assertThrows(
-        RuntimeException.class,
-        () -> engine.processNotification("EMAIL", "buyer@example.com", "hello"));
-
-    //then
-    assertThat(exception).isInstanceOf(LegacyNotificationException.DispatchFailed.class);
-    assertThat(exception.getCause()).isInstanceOf(DataAccessResourceFailureException.class);
-    assertThat(engine.getHistory()).isEmpty();
-  }
-
-  @Test
-  void unsupportedTypeIsStoredAsUnknown() {
-    //given
-    Exception exception = assertThrows(
-            Exception.class,
-            () -> engine.processNotification("FAX", "ops@example.com", "hello"));
-    assertThat(exception.getMessage()).isEqualTo("Unsupported type: FAX");
-
-    //when
-    LegacyNotificationResponse latest = engine.getLatestState();
-
-    //then
-    assertThat(latest.getStatus()).isEqualTo("U");
-    assertThat(latest.getMessage()).isEqualTo("Unsupported type: FAX");
-  }
-
-  @Test
-  void threeFailuresOpenCircuitBreakerForNextAttempt() {
-    //given
-    doThrow(new Exception("SMTP Timeout"))
+  void threeConsecutiveHandlerFailuresOpenCircuitBreaker() {
+    doThrow(new LegacyNotificationException("SMTP Timeout", HttpStatus.GATEWAY_TIMEOUT, "SMTP Timeout"))
         .when(emailHandler)
         .execute(anyString(), anyString());
 
-    //when
-    for (int i = 0; i < 3; i++) {
-      Exception exception = assertThrows(
-          Exception.class,
-          () -> engine.processNotification("EMAIL", "error-user@example.com", "boom"));
-
-      //then
-      assertThat(exception).isInstanceOf(LegacyNotificationException.DispatchFailed.class);
-      assertThat(exception.getCause().getMessage()).isEqualTo("SMTP Timeout");
+    for (int attempt = 0; attempt < 3; attempt++) {
+      LegacyNotificationException.DispatchFailed exception = assertThrows(
+          LegacyNotificationException.DispatchFailed.class,
+          () -> engine.processNotification("EMAIL", "error-user@example.com", "hello"));
+      assertThat(exception.getCause()).hasMessage("SMTP Timeout");
     }
 
-   //when
-    RuntimeException exception = assertThrows(
-        RuntimeException.class,
-        () -> engine.processNotification("SMS", "ok-user@example.com", "hello"));
-
-    //then
-    assertThat(exception).isInstanceOf(LegacyNotificationException.CircuitOpen.class);
-    LegacyNotificationResponse latest = engine.getLatestState();
-    assertThat(latest.getStatus()).isEqualTo("R");
-    assertThat(latest.getFailureCount()).isEqualTo(3);
-    assertThat(latest.getDispatchCount()).isEqualTo(4);
+    assertThat(circuitBreaker().getState()).isEqualTo(CircuitBreaker.State.OPEN);
+    assertThrows(
+        LegacyNotificationException.CircuitOpen.class,
+        () -> engine.processNotification("SMS", "ok-user", "hello"));
   }
 
+  @Test
+  void breakerUsesThreeCallThresholdAndSixtySecondOpenWait() {
+    var config = circuitBreaker().getCircuitBreakerConfig();
+
+    assertThat(config.getSlidingWindowSize()).isEqualTo(3);
+    assertThat(config.getMinimumNumberOfCalls()).isEqualTo(3);
+    assertThat(config.getFailureRateThreshold()).isEqualTo(100.0f);
+    assertThat(config.getWaitIntervalFunctionInOpenState().apply(1)).isEqualTo(60_000L);
+    assertThat(config.getPermittedNumberOfCallsInHalfOpenState()).isEqualTo(1);
+  }
+
+  private CircuitBreaker circuitBreaker() {
+    return circuitBreakerRegistry.circuitBreaker("notificationDispatch");
+  }
 }

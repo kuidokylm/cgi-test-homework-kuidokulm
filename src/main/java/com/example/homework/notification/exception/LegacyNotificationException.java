@@ -7,7 +7,7 @@ public class LegacyNotificationException extends RuntimeException {
   private final String code;
   private final HttpStatus status;
 
-  private LegacyNotificationException(String code, HttpStatus status, String message) {
+  public LegacyNotificationException(String code, HttpStatus status, String message) {
     super(message);
     this.code = code;
     this.status = status;
@@ -44,7 +44,7 @@ public class LegacyNotificationException extends RuntimeException {
       super(
           "RECIPIENT_REJECTED",
           HttpStatus.FORBIDDEN,
-          "Recipient is blacklisted or rate-limited.");
+          "Recipient is blacklisted.");
     }
   }
 

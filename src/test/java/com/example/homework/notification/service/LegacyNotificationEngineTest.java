@@ -22,7 +22,9 @@ class LegacyNotificationEngineTest {
     //then
     assertThatThrownBy(
             () -> new LegacyNotificationEngine(
-                mock(LegacyDatabaseManager.class), List.of(handler)))
+                mock(LegacyDatabaseManager.class),
+                mock(NotificationDispatchService.class),
+                List.of(handler)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("must declare a non-blank supported type");
   }
@@ -34,7 +36,9 @@ class LegacyNotificationEngineTest {
 
     assertThatThrownBy(
             () -> new LegacyNotificationEngine(
-                mock(LegacyDatabaseManager.class), List.of(handler)))
+                mock(LegacyDatabaseManager.class),
+                mock(NotificationDispatchService.class),
+                List.of(handler)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("must declare a non-blank supported type");
   }

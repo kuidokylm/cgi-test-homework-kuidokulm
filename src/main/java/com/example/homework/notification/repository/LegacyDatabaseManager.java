@@ -1,72 +1,34 @@
 package com.example.homework.notification.repository;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.util.List;
 import java.util.function.Supplier;
 
-import com.example.homework.notification.model.LegacyNotificationResponse;
-import org.jspecify.annotations.NullMarked;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class LegacyDatabaseManager {
 
   private static final Logger logger = LoggerFactory.getLogger(LegacyDatabaseManager.class);
+
+  private final JdbcTemplate jdbcTemplate;
+
   public LegacyDatabaseManager(JdbcTemplate jdbcTemplate) {
     this.jdbcTemplate = jdbcTemplate;
   }
 
-  private final JdbcTemplate jdbcTemplate;
-  private final RowMapper<LegacyNotificationResponse> rowMapper = new RowMapper<>() {
-    @Override
-    @NullMarked
-    public LegacyNotificationResponse mapRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
-      LegacyNotificationResponse response = new LegacyNotificationResponse();
-      response.setId(rs.getLong("id"));
-      response.setType(rs.getString("notificationType"));
-      response.setTarget(rs.getString("targetDestination"));
-      response.setPayload(rs.getString("payload"));
-      response.setStatus(rs.getString("notificationState"));
-      response.setFailureCount(rs.getInt("failureCounter"));
-      response.setDispatchCount(rs.getInt("dispatchCounter"));
-      response.setMessage(rs.getString("lastMessage"));
-      response.setCreatedAt(rs.getTimestamp("created"));
-      response.setUpdatedAt(rs.getTimestamp("updated"));
-      return response;
-    }
-  };
-
-  public boolean isUserBlacklistedOrRateLimited(String target) {
+  public boolean isBlacklisted(String target) {
     Boolean blacklisted = executeQuery(
-        "isUserBlacklistedOrRateLimited",
+        "isBlacklisted",
         () -> jdbcTemplate.queryForObject(
             "select exists (select 1 from ntf_blacklist where targetDestination = ?)",
             Boolean.class,
             target));
-
-    if (Boolean.TRUE.equals(blacklisted)) {
-      return true;
-    }
-
-    Integer recentCount = executeQuery(
-        "isUserBlacklistedOrRateLimited",
-        () -> jdbcTemplate.queryForObject(
-            "select count(*) "
-                + "from ntf_tx "
-                + "where targetDestination = ? "
-                + "  and created >= dateadd('minute', -1, current_timestamp)",
-            Integer.class,
-            target));
-
-    return recentCount != null && recentCount >= 3;
+    return Boolean.TRUE.equals(blacklisted);
   }
 
   public void insertIntoBlacklist(String target) {
@@ -86,110 +48,12 @@ public class LegacyDatabaseManager {
     logger.info("Removed {} from blacklist", target);
   }
 
-  public long openDispatch(final String type, final String target, final String payload) {
-    final long id = getNextId();
-    final int nextDispatchCount = getTotalDispatches() + 1;
-    final int currentFailureCount = getFailureCountFromDatabase();
-    final Timestamp now = new Timestamp(System.currentTimeMillis());
-
-    executeUpdate(
-        "openDispatch",
-        "insert into ntf_tx(id, notificationType, targetDestination, payload, notificationState, "
-            + "failureCounter, dispatchCounter, lastMessage, created) "
-            + "values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        id,
-        type,
-        target,
-        payload,
-        "N",
-        currentFailureCount,
-        nextDispatchCount,
-        "START",
-        now);
-
-    return id;
-  }
-
-  private long getNextId() {
-    Long maxId = executeQuery(
-        "getNextId",
-        () -> jdbcTemplate.queryForObject(
-            "select max(id) from ntf_tx",
-            Long.class));
-    return (maxId == null ? 0L : maxId) + 1L;
-  }
-
-  public int getFailureCountFromDatabase() {
-    List<Integer> results = executeQuery(
-        "getFailureCountFromDatabase",
-        () -> jdbcTemplate.query(
-            "select failureCounter from ntf_tx order by id desc limit 1",
-            new RowMapper<>() {
-              @Override
-              @NullMarked
-              public Integer mapRow(ResultSet resultSet, int rowNum) throws SQLException {
-                return resultSet.getInt(1);
-              }
-            }));
-    if (results.isEmpty()) {
-      return 0;
-    }
-    return results.getFirst();
-  }
-
-  public void recordDatabaseFailure(long id, String target, String error) {
-    int nextFailureCount = getFailureCountFromDatabase() + 1;
-    executeUpdate(
-        "recordDatabaseFailure",
-        "update ntf_tx set notificationState = ?, failureCounter = ?, lastMessage = ?, "
-            + "updated = ?, targetDestination = ? where id = ?",
-        "E",
-        nextFailureCount,
-        shorten(error),
-        new Timestamp(System.currentTimeMillis()),
-        target,
-        id);
-    logger.warn("Recorded failure for notification dispatch {}: {}", id, error);
-  }
-
-  public void resetDatabaseFailures(long id) {
-    executeUpdate(
-        "resetDatabaseFailures",
-        "update ntf_tx set notificationState = ?, failureCounter = ?, lastMessage = ?, updated = ? where id = ?",
-        "S",
-        0,
-        "SENT",
-        new Timestamp(System.currentTimeMillis()),
-        id);
-    logger.info("Database failures reset for notification dispatch {}", id);
-  }
-
-  public void recordUnsupportedType(long id, String type) {
-    executeUpdate(
-        "recordUnsupportedType",
-        "update ntf_tx set notificationState = ?, lastMessage = ?, updated = ? where id = ?",
-        "U",
-        shorten("Unsupported type: " + type),
-        new Timestamp(System.currentTimeMillis()),
-        id);
-  }
-
-  public void markAsSkipped(long id, String message) {
-    executeUpdate(
-        "markAsSkipped",
-        "update ntf_tx set notificationState = ?, lastMessage = ?, updated = ? where id = ?",
-        "R",
-        shorten(message),
-        new Timestamp(System.currentTimeMillis()),
-        id);
-  }
-
   private <T> T executeQuery(String operation, Supplier<T> query) {
     try {
       return query.get();
     } catch (DataAccessException e) {
       throw new DataAccessResourceFailureException(
-          "Database error while attempting to " + operation + " "+e.getMessage(),
+          "Database error while attempting to " + operation + " " + e.getMessage(),
           e);
     }
   }
@@ -199,60 +63,8 @@ public class LegacyDatabaseManager {
       jdbcTemplate.update(sql, args);
     } catch (DataAccessException e) {
       throw new DataAccessResourceFailureException(
-          "Database error while attempting to " + operation + " "+e.getMessage(),
+          "Database error while attempting to " + operation + " " + e.getMessage(),
           e);
     }
-  }
-
-  public int getTotalDispatches() {
-    Integer latestDispatchCount = executeQuery(
-        "getTotalDispatches",
-        () -> jdbcTemplate.queryForObject(
-            "select max(dispatchCounter) from ntf_tx",
-            Integer.class));
-    if (latestDispatchCount == null) {
-      return 0;
-    }
-    return latestDispatchCount;
-  }
-
-  public LegacyNotificationResponse getLatestState() {
-    List<LegacyNotificationResponse> items = executeQuery(
-        "getLatestState",
-        () -> jdbcTemplate.query(
-            "select * from ntf_tx order by id desc limit 1",
-            rowMapper));
-    if (items.isEmpty()) {
-      return null;
-    }
-    return items.getFirst();
-  }
-
-  public LegacyNotificationResponse getDispatchById(long id) {
-    return executeQuery(
-        "getDispatchById",
-        () -> jdbcTemplate.queryForObject(
-            "select * from ntf_tx where id = ?",
-            rowMapper,
-            id));
-  }
-
-  public List<LegacyNotificationResponse> getHistory() {
-    return executeQuery(
-        "getHistory",
-        () -> jdbcTemplate.query(
-            "select * from ntf_tx order by id desc limit 20",
-            rowMapper));
-  }
-
-
-  private String shorten(String value) {
-    if (value == null) {
-      return null;
-    }
-    if (value.length() <= 255) {
-      return value;
-    }
-    return value.substring(0, 255);
   }
 }

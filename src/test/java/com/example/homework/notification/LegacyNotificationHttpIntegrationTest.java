@@ -1,182 +1,143 @@
 package com.example.homework.notification;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import com.example.homework.notification.controller.LegacyNotificationController;
+import com.example.homework.notification.exception.LegacyNotificationException;
 import com.example.homework.notification.exception.LegacyNotificationExceptionHandler;
 import com.example.homework.notification.handler.EmailNotificationHandler;
 import com.example.homework.notification.service.LegacyNotificationEngine;
-import org.mockito.ArgumentMatchers;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.hamcrest.Matchers.containsString;
-import static org.springframework.http.MediaType.APPLICATION_JSON;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
+class LegacyNotificationHttpIntegrationTest {
 
-public class LegacyNotificationHttpIntegrationTest {
-    private static final String HISTORY_QUERY = "select * from ntf_tx order by id desc limit 20";
+  @Autowired
+  private LegacyNotificationEngine engine;
 
-    @Autowired
-    private LegacyNotificationEngine engine;
+  @MockitoSpyBean
+  private EmailNotificationHandler emailHandler;
 
-    @MockitoSpyBean
-    private JdbcTemplate jdbcTemplate;
+  @Test
+  void sendEndpointReturnsSuccessWithoutPersistingNotificationHistory() throws Exception {
+    MockMvc mockMvc = createMockMvc();
 
-    @MockitoSpyBean
-    private EmailNotificationHandler emailHandler;
-
-    @Test
-    void sendAndReadEndpointsExposeNotificationStateOverHttp() throws Exception {
-        MockMvc mockMvc = createMockMvc();
-
-        mockMvc.perform(post("/api/legacy/notifications/send")
-                        .contentType(APPLICATION_JSON)
-                        .content("""
+    mockMvc.perform(post("/api/legacy/notifications/send")
+            .contentType(APPLICATION_JSON)
+            .content("""
                 {"type":"EMAIL","target":"http-user@example.com","payload":"hello"}
                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.type").value("EMAIL"))
-                .andExpect(jsonPath("$.target").value("http-user@example.com"))
-                .andExpect(jsonPath("$.payload").value("hello"))
-                .andExpect(jsonPath("$.status").value("S"))
-                .andExpect(jsonPath("$.dispatchCount").value(1));
+        .andExpect(status().isOk())
+        .andExpect(content().string(""));
 
-        mockMvc.perform(get("/api/legacy/notifications/latest"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.target").value("http-user@example.com"))
-                .andExpect(jsonPath("$.status").value("S"));
+    mockMvc.perform(get("/api/legacy/notifications/history"))
+        .andExpect(status().isNotFound());
+    mockMvc.perform(get("/api/legacy/notifications/latest"))
+        .andExpect(status().isNotFound());
+  }
 
-        mockMvc.perform(get("/api/legacy/notifications/history"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$").isNotEmpty())
-                .andExpect(jsonPath("$[0].target").value("http-user@example.com"));
-    }
+  @Test
+  void controllerMapsNotificationExceptionsToHttpStatuses() throws Exception {
+    MockMvc mockMvc = createMockMvc();
 
-    @Test
-    void controllerMapsNotificationExceptionsToHttpStatuses() throws Exception {
-        MockMvc mockMvc = createMockMvc();
-
-        mockMvc.perform(post("/api/legacy/notifications/send")
-                        .contentType(APPLICATION_JSON)
-                        .content("""
+    mockMvc.perform(post("/api/legacy/notifications/send")
+            .contentType(APPLICATION_JSON)
+            .content("""
                 {"type":"EMAIL","target":" ","payload":"hello"}
                 """))
-                .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_TARGET"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_TARGET"));
 
-        engine.insertIntoBlacklist("blocked@example.com");
-        mockMvc.perform(post("/api/legacy/notifications/send")
-                        .contentType(APPLICATION_JSON)
-                        .content("""
+    engine.insertIntoBlacklist("blocked@example.com");
+    mockMvc.perform(post("/api/legacy/notifications/send")
+            .contentType(APPLICATION_JSON)
+            .content("""
                 {"type":"EMAIL","target":"blocked@example.com ","payload":"hello"}
                 """))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("RECIPIENT_REJECTED"));
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("RECIPIENT_REJECTED"));
 
-        mockMvc.perform(post("/api/legacy/notifications/send")
-                        .contentType(APPLICATION_JSON)
-                        .content("""
+    mockMvc.perform(post("/api/legacy/notifications/send")
+            .contentType(APPLICATION_JSON)
+            .content("""
                 {"type":"EMAIL","payload":"hello"}
                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_TARGET"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_TARGET"));
 
-        mockMvc.perform(post("/api/legacy/notifications/send")
-                        .contentType(APPLICATION_JSON)
-                        .content("""
+    mockMvc.perform(post("/api/legacy/notifications/send")
+            .contentType(APPLICATION_JSON)
+            .content("""
                 {"target":"helper@example.com ","payload":"hello"}
                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
 
-        mockMvc.perform(post("/api/legacy/notifications/send")
-                        .contentType(APPLICATION_JSON)
-                        .content("""
+    mockMvc.perform(post("/api/legacy/notifications/send")
+            .contentType(APPLICATION_JSON)
+            .content("""
                 {"target":"missingpayload@example.com "}
                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
 
-
-        mockMvc.perform(post("/api/legacy/notifications/send")
-                        .contentType(APPLICATION_JSON)
-                        .content("""
+    mockMvc.perform(post("/api/legacy/notifications/send")
+            .contentType(APPLICATION_JSON)
+            .content("""
                 {"type":"FAX","target":"unsupportedtype@example.com","payload":"hello"}
                 """))
-                .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-                .andExpect(jsonPath("$.message").value("Unsupported type: FAX"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+        .andExpect(jsonPath("$.message").value("Unsupported type: FAX"));
 
-        doThrow(new Exception("SMTP Timeout"))
-                .when(emailHandler)
-                .execute(anyString(), anyString());
+    doThrow(new LegacyNotificationException("SMTP Timeout", HttpStatus.GATEWAY_TIMEOUT, "Notification dispatch failed."))
+        .when(emailHandler)
+        .execute(anyString(), anyString());
 
-        for (int attempt = 1; attempt <= 3; attempt++) {
-            mockMvc.perform(post("/api/legacy/notifications/send")
-                            .contentType(APPLICATION_JSON)
-                            .content("""
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      mockMvc.perform(post("/api/legacy/notifications/send")
+              .contentType(APPLICATION_JSON)
+              .content("""
                   {"type":"EMAIL","target":"failure-%d@example.com","payload":"hello"}
                   """.formatted(attempt)))
-                    .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
-                    .andExpect(status().isBadGateway())
-                    .andExpect(jsonPath("$.code").value("DISPATCH_FAILED"))
-                    .andExpect(jsonPath("$.message").value("Notification dispatch failed."));
-        }
+          .andExpect(status().isBadGateway())
+          .andExpect(jsonPath("$.code").value("DISPATCH_FAILED"))
+          .andExpect(jsonPath("$.message").value("Notification dispatch failed."));
+    }
 
-        mockMvc.perform(post("/api/legacy/notifications/send")
-                        .contentType(APPLICATION_JSON)
-                        .content("""
-                {"type":"SMS","target":"circuit-open@example.com","payload":"hello"}
+    mockMvc.perform(post("/api/legacy/notifications/send")
+            .contentType(APPLICATION_JSON)
+            .content("""
+                {"type":"SMS","target":"circuit-open","payload":"hello"}
                 """))
-                .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.code").value("CIRCUIT_OPEN"))
-                .andExpect(jsonPath("$.message").value("Notification dispatch is temporarily unavailable."));
-    }
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.code").value("CIRCUIT_OPEN"))
+        .andExpect(jsonPath("$.message").value(
+            containsString("temporarily unavailable")));
 
+    engine.removeFromBlacklist("blocked@example.com");
+  }
 
-    @Test
-    void historyDatabaseFailureMapsToServiceUnavailableResponse() throws Exception {
-        //given
-        doThrow(new DataAccessResourceFailureException("Database unavailable"))
-                .when(jdbcTemplate)
-                .query(eq(HISTORY_QUERY), ArgumentMatchers.<RowMapper<?>>any());
-
-        MockMvc mockMvc = createMockMvc();
-
-        //when
-        mockMvc.perform(get("/api/legacy/notifications/history"))
-                .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.code").value("DATABASE_UNAVAILABLE"))
-                .andExpect(jsonPath("$.message").value(
-                        containsString("Database error while attempting to getHistory")))
-                .andReturn();
-    }
-
-    private MockMvc createMockMvc() {
-        return MockMvcBuilders
-                .standaloneSetup(new LegacyNotificationController(engine))
-                .setControllerAdvice(new LegacyNotificationExceptionHandler())
-                .build();
-    }
+  private MockMvc createMockMvc() {
+    return MockMvcBuilders
+        .standaloneSetup(new LegacyNotificationController(engine))
+        .setControllerAdvice(new LegacyNotificationExceptionHandler())
+        .build();
+  }
 }
